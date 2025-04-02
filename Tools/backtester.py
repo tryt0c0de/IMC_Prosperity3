@@ -2,20 +2,8 @@ from typing import Dict, List, Any
 import pandas as pd
 import json
 from collections import defaultdict
-from datamodel import TradingState, Listing, OrderDepth, Trade, Order, UserId
-import time
-import numpy as np
+from datamodel import TradingState, Listing, OrderDepth, Trade, Observation, Order, UserId
 
-class ConversionObservation:
-    def __init__(self, symbol: str, implied_bid: float, implied_ask: float):
-        self.conversionObservations = {symbol: Observation(implied_bid, implied_ask)}
-    
-class Observation:
-    def __init__(self, implied_bid: float, implied_ask: float):
-        self.implied_bid = implied_bid
-        self.implied_ask = implied_ask
-        self.askPrice = implied_ask
-        self.bidPrice = implied_bid
 
 class Backtester:
     def __init__(self, trader, listings: Dict[str, Listing], position_limit: Dict[str, int], fair_marks, 
@@ -28,7 +16,7 @@ class Backtester:
         self.trade_history = trade_history.sort_values(by=['timestamp', 'symbol'])
         self.file_name = file_name
 
-        self.observations = []
+        self.observations = [Observation({}, {}) for _ in range(len(market_data))]
 
         self.current_position = {product: 0 for product in self.listings.keys()}
         self.pnl_history = []
@@ -36,7 +24,6 @@ class Backtester:
         self.cash = {product: 0 for product in self.listings.keys()}
         self.trades = []
         self.sandbox_logs = []
-        self.run_times = []
         
     def run(self):
         traderData = ""
@@ -44,8 +31,12 @@ class Backtester:
         timestamp_group_md = self.market_data.groupby('timestamp')
         timestamp_group_th = self.trade_history.groupby('timestamp')
         
+        own_trades = defaultdict(list)
+        market_trades = defaultdict(list)
+        pnl_product = defaultdict(float)
         
         trade_history_dict = {}
+        
         for timestamp, group in timestamp_group_th:
             trades = []
             for _, row in group.iterrows():
@@ -54,6 +45,7 @@ class Backtester:
                 quantity = row['quantity']
                 buyer = row['buyer'] if pd.notnull(row['buyer']) else ""
                 seller = row['seller'] if pd.notnull(row['seller']) else ""
+
                 
                 trade = Trade(symbol, int(price), int(quantity), buyer, seller, timestamp)
                 
@@ -62,46 +54,25 @@ class Backtester:
         
         
         for timestamp, group in timestamp_group_md:
-            own_trades = defaultdict(list)
-            market_trades = defaultdict(list)
-            pnl_product = defaultdict(float)
-            
             order_depths = self._construct_order_depths(group)
             order_depths_matching = self._construct_order_depths(group)
             order_depths_pnl = self._construct_order_depths(group)
-
-            local_bid = max(order_depths["ORCHIDS"].buy_orders.keys())
-            local_ask = min(order_depths["ORCHIDS"].sell_orders.keys())
-            implied_bid = local_bid - 2
-            implied_ask = local_ask + 2
-            observation = ConversionObservation("ORCHIDS", implied_bid, implied_ask)
             state = self._construct_trading_state(traderData, timestamp, self.listings, order_depths, 
-                                 dict(own_trades), dict(market_trades), self.current_position, observation)
-            
-            start_time = time.time()
+                                 dict(own_trades), dict(market_trades), self.current_position, self.observations)
             orders, conversions, traderData = self.trader.run(state)
-            end_time = time.time()
-            self.run_times.append(end_time - start_time)
-            
             products = group['product'].tolist()
             sandboxLog = ""
             trades_at_timestamp = trade_history_dict.get(timestamp, [])
 
             for product in products:
                 new_trades = []
-                if product == "ORCHIDS":
-                    self._execute_conversion(conversions, order_depths_matching, self.current_position, self.cash, observation.conversionObservations["ORCHIDS"])
-                
                 for order in orders.get(product, []):
-                    executed_orders = self._execute_order(timestamp, order, order_depths_matching, self.current_position, self.cash, trade_history_dict, sandboxLog)
-                    if len(executed_orders) > 0:
-                        trades_done, sandboxLog = executed_orders
-                        new_trades.extend(trades_done)
+                    trades_done, sandboxLog = self._execute_order(timestamp, order, order_depths_matching, self.current_position, self.cash, trade_history_dict, sandboxLog)
+                    new_trades.extend(trades_done)
                 if len(new_trades) > 0:
                     own_trades[product] = new_trades
-                    
             self.sandbox_logs.append({"sandboxLog": sandboxLog, "lambdaLog": "", "timestamp": timestamp})
-            
+
             trades_at_timestamp = trade_history_dict.get(timestamp, [])
             if trades_at_timestamp:
                 for trade in trades_at_timestamp:
@@ -110,14 +81,12 @@ class Backtester:
             else: 
                 for product in products:
                     market_trades[product] = []
+
             
             for product in products:
                 self._mark_pnl(self.cash, self.current_position, order_depths_pnl, self.pnl, product)
                 self.pnl_history.append(self.pnl[product])
-                
             self._add_trades(own_trades, market_trades)
-            if np.mean(self.run_times) * 1000 > 900:
-                print(f"Mean Run time: {np.mean(self.run_times) * 1000} ms")
         return self._log_trades(self.file_name)
     
     
@@ -286,44 +255,23 @@ class Backtester:
     def _execute_order(self, timestamp, order, order_depths, position, cash, trades_at_timestamp, sandboxLog):
         if order.quantity == 0:
             return []
+        
         order_depth = order_depths[order.symbol]
         if order.quantity > 0:
             return self._execute_buy_order(timestamp, order, order_depths, position, cash, trades_at_timestamp, sandboxLog)
         else:
             return self._execute_sell_order(timestamp, order, order_depths, position, cash, trades_at_timestamp, sandboxLog)
     
-    def _execute_conversion(self, conversions, order_depths, position, cash, observation):
-        implied_bid = observation.implied_bid
-        implied_ask = observation.implied_ask
-        if conversions > 0:
-            position["ORCHIDS"] += abs(conversions)
-            cash["ORCHIDS"] -= implied_ask * abs(conversions)
-        else:
-            position["ORCHIDS"] -= abs(conversions)
-            cash["ORCHIDS"] += implied_bid * abs(conversions)
-
-
     def _mark_pnl(self, cash, position, order_depths, pnl, product):
         order_depth = order_depths[product]
         
-        best_ask = min(order_depth.sell_orders.keys()) if len(order_depth.sell_orders.keys()) > 0 else None
-        best_bid = max(order_depth.buy_orders.keys()) if len(order_depth.buy_orders.keys()) > 0 else None 
-        if best_bid is None or best_ask is None: 
-            mid = None
-        else: 
-            mid = (best_ask + best_bid)/2
+        best_ask = min(order_depth.sell_orders.keys())
+        best_bid = max(order_depth.buy_orders.keys())
+        mid = (best_ask + best_bid)/2
         fair = mid
         if product in self.fair_marks:
             get_fair = self.fair_marks[product]
             fair = get_fair(order_depth)
         
-        if fair is None:
-            pnl[product] = None
-        else:
-            pnl[product] = cash[product] + fair * position[product]
-            
-
- 
+        pnl[product] = cash[product] + fair * position[product]
         
-
-

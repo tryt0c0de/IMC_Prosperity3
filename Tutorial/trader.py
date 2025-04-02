@@ -12,7 +12,7 @@ class Trader:
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
-            print("Acceptable price : " + str(acceptable_price))
+            #print("Acceptable price : " + str(acceptable_price))
             print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             if product == "RAINFOREST_RESIN":
                 acceptable_price = 0

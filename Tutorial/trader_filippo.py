@@ -2,7 +2,8 @@ from datamodel import OrderDepth, UserId, TradingState, Order
 from typing import List
 import jsonpickle
 import numpy as np
-
+from Logger import Logger
+logger = Logger()
 class Trader:
     def __init__(self):
         self.position_limits = {"KELP": 50, "RAINFOREST_RESIN": 50}
@@ -55,4 +56,5 @@ class Trader:
 
         traderData = jsonpickle.encode({})
         conversions = 0
+        logger.flush( state, result, conversions, traderData)
         return result, conversions, traderData

@@ -5,11 +5,11 @@ import numpy as np
 from Logger import Logger
 logger = Logger()
 class Trader:
-    def __init__(self):
+    def __init__(self,parameters = []):
         self.position_limits = {"KELP": 50, "RAINFOREST_RESIN": 50}
         self.base_edge = 1  # base price step from mid-price for quoting
         self.min_spread = {"KELP": 2, "RAINFOREST_RESIN": 1.5}
-        self.max_order_size = 25
+        self.max_order_size = 10
 
     def market_make_refined(self, product: str, order_depth: OrderDepth, position: int) -> List[Order]:
         orders = []
@@ -48,6 +48,7 @@ class Trader:
 
     def run(self, state: TradingState):
         result = {}
+        logger.print(f"Max order size: {self.max_order_size}")
 
         for product in ["RAINFOREST_RESIN"]:
             if product in state.order_depths:

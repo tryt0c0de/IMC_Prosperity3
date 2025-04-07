@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
-
+#from Logger import Logger
 
 class Logger:
     def __init__(self) -> None:
@@ -149,14 +149,28 @@ class Trader:
                         best_ask, best_ask_amount = list(order_depth.sell_orders.items())[i]
                         if int(best_ask) < acceptable_price:
                             #print("BUY", str(-best_ask_amount) + "x", best_ask)
-                            orders.append(Order(product, best_ask, -best_ask_amount))
+                            if current_holdings[product] < max_holdings[product]:
+                                buy_amount = min(max_holdings[product] - current_holdings[product], -best_ask_amount)
+                                orders.append(Order(product, best_ask, buy_amount))
+                                current_holdings[product] += buy_amount
+                            #orders.append(Order(product, best_ask, -best_ask_amount))
 
                 if len(order_depth.buy_orders) != 0:
                     for j in range (0, len(list(order_depth.buy_orders.items()))):
                         best_bid, best_bid_amount = list(order_depth.buy_orders.items())[j]
                         if int(best_bid) > acceptable_price:
                             #print("SELL", str(best_bid_amount) + "x", best_bid)
-                            orders.append(Order(product, best_bid, -best_bid_amount))
+                            if current_holdings[product] > -1 * max_holdings[product]:
+                                sell_amount = min(current_holdings[product] + max_holdings[product], best_bid_amount)
+                                orders.append(Order(product, best_bid, -sell_amount))
+                                current_holdings[product] -= sell_amount
+                
+                # if we have huge position in RAINFOREST_RESIN, we need to try to sell it off by acceptable_price
+                if current_holdings[product]/max_holdings[product] > 0.9:
+                    orders.append(Order(product, acceptable_price, -5))
+
+                elif current_holdings[product]/max_holdings[product] < -0.9:
+                    orders.append(Order(product, acceptable_price, 5))
 
                 # for i in range (max_holdings[product]):
                 #     orders.append(Order(product, acceptable_price + 1, -1))
@@ -167,5 +181,5 @@ class Trader:
         traderData = "SAMPLE" # String value holding Trader state data required. It will be delivered as TradingState.traderData on next execution.
         
         conversions = 1
-        logger.flush(state, result, conversions, traderData)
+        logger.flush(state, result,conversions,traderData)
         return result, conversions, traderData

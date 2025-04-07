@@ -130,10 +130,10 @@ logger = Logger()
 
 
 class Trader:
-    def __init__(self, span, ub=1000):
+    def __init__(self, params):
         self.df_kelp = pd.DataFrame({col: [] for col in ['timestamp', 'w_price_KELP', 'w_price_SQUID_INK']})
-        self.span = span[0]
-        self.ub = 1/(ub)
+        self.span = int(params[0])
+        self.ub = 1/params[1]
         self.lb = -self.ub
         self.max_holdings = {"SQUID_INK": 50, "KELP": 50}
         self.current_holdings = {product: 0 for product in self.max_holdings}
@@ -159,7 +159,7 @@ class Trader:
 
             self.w_price[product] = (best_bid + best_ask) / 2
 
-            if timestamp >= self.span * 1000:
+            if timestamp >= self.span * 100:
                 recent_prices = self.df_kelp[f'w_price_{product}'].iloc[-self.span + 1:].tolist() + [self.w_price[product]]
                 ewm = pd.Series(recent_prices).ewm(span=self.span, adjust=False).mean().iloc[-1]
                 spread = (self.w_price[product] - ewm) / ewm

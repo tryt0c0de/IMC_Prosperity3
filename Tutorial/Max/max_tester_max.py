@@ -49,15 +49,15 @@ def test_single_day(rolling_window, day_number):
     return 0
 
 
-def test_full_round(rolling_window):
+def test_full_round(rolling_window, ub):
     command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/Trader.py", "1",
-               "--parameters", f"{rolling_window}"]
+               "--parameters", f"{rolling_window},{ub}"]
 
     # Run the command
     result = subprocess.run(command, capture_output=True, text=True)
-
     # Combine stdout and stderr (in case the log path is in either)
     full_output = result.stdout + "\n" + result.stderr
+    #print(full_output)
 
     # Use regex to extract the log file path
     pattern = r'backtests/[\\/]?[\d\-_.]+\.log'
@@ -75,7 +75,7 @@ def test_full_round(rolling_window):
             print(f"Total profit across all days: {total_profit}")
 
             # Rename the log file to include the parameters and the profit in a custom folder
-            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/backtests/miquel_tester_full_round_rolling_window_{rolling_window}_pnl_{total_profit}.log"
+            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/backtests/miquel_tester_full_round_rolling_window_{rolling_window}_ub_{ub}_pnl_{total_profit}.log"
             print(custom_log_path)
             log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/' + log_path
 
@@ -93,19 +93,22 @@ test_type = "full_round"  # Change to "single_day" or "full_round"
 day_to_test = -2  # Only used if test_type is "single_day"
 
 max_profit = 0
-max_profit_parameters = 0
+max_profit_parameters = (0,0)
 
-rolling_windows_to_test = [10,20,30,40,50,60]
+rolling_windows_to_test = [20]#[14,17,20,23, 26]
+ub_windows_to_test = [1000]#[600, 800, 1000, 1200, 1400]
 
 for i in rolling_windows_to_test:
-    if test_type == "single_day":
-        total_profit = test_single_day(i, day_to_test)
-    else:  # full_round
-        total_profit = test_full_round(i)
+    for j in ub_windows_to_test:
 
-    if total_profit > max_profit:
-        max_profit = total_profit
-        max_profit_parameters = i
+        if test_type == "single_day":
+            total_profit = test_single_day(i, day_to_test)
+        else:  # full_round
+            total_profit = test_full_round(i,j)
+
+        if total_profit > max_profit:
+            max_profit = total_profit
+            max_profit_parameters = (i,j)
 
 print(f"Max profit: {max_profit}")
 print(f"Max profit parameters: {max_profit_parameters}")

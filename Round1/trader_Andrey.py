@@ -164,6 +164,13 @@ class Trader:
                                 sell_amount = min(current_holdings[product] + max_holdings[product], best_bid_amount)
                                 orders.append(Order(product, best_bid, -sell_amount))
                                 current_holdings[product] -= sell_amount
+                
+                # if we have huge position in RAINFOREST_RESIN, we need to try to sell it off by acceptable_price
+                if current_holdings[product]/max_holdings[product] > 0.95:
+                    orders.append(Order(product, acceptable_price, -5))
+
+                elif current_holdings[product]/max_holdings[product] < -0.95:
+                    orders.append(Order(product, acceptable_price, 5))
 
                 # for i in range (max_holdings[product]):
                 #     orders.append(Order(product, acceptable_price + 1, -1))

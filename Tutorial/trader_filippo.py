@@ -9,7 +9,7 @@ class Trader:
         self.position_limits = {"KELP": 50, "RAINFOREST_RESIN": 50}
         self.base_edge = 1  # base price step from mid-price for quoting
         self.min_spread = {"KELP": 2, "RAINFOREST_RESIN": 1.5}
-        self.max_order_size = 10
+        self.max_order_size = 25
 
     def market_make_refined(self, product: str, order_depth: OrderDepth, position: int) -> List[Order]:
         orders = []
@@ -49,7 +49,7 @@ class Trader:
     def run(self, state: TradingState):
         result = {}
 
-        for product in ["KELP", "RAINFOREST_RESIN"]:
+        for product in ["RAINFOREST_RESIN"]:
             if product in state.order_depths:
                 pos = state.position.get(product, 0)
                 result[product] = self.market_make_refined(product, state.order_depths[product], pos)

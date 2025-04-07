@@ -5,11 +5,11 @@ import numpy as np
 from Logger import Logger
 logger = Logger()
 class Trader:
-    def __init__(self):
+    def __init__(self, parameters:list[float] = []):
         self.position_limits = {"KELP": 50, "RAINFOREST_RESIN": 50}
         self.base_edge = 1  # base price step from mid-price for quoting
         self.min_spread = {"KELP": 2, "RAINFOREST_RESIN": 1.5}
-        self.max_order_size = 25
+        self.max_order_size = parameters[0]
 
     def market_make_refined(self, product: str, order_depth: OrderDepth, position: int) -> List[Order]:
         orders = []

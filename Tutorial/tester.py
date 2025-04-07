@@ -6,6 +6,8 @@ import re
 max_profit = 0
 for i in [5,10,15,20,25,30,35,40,45,50]:
     command = ["prosperity3bt", r"C:\Users\Usuario1\Desktop\quant\IMC_Prosperity\Tutorial\trader_filippo.py", "0","--parameters",f"{i}"]
+    # In the case of multiple parameters we have to put f"{i},{j},{k}" with NO SPACES after the comma, 
+    # If there is no parameter we can delete after "0" and leave the list until that point
 
     # Run the command
     result = subprocess.run(command, capture_output=True, text=True)
@@ -39,6 +41,7 @@ for i in [5,10,15,20,25,30,35,40,45,50]:
         if total_profit > max_profit:
             max_profit = total_profit
             max_profit_parameters = i
+        # Rename the log file to include the parameters and the profit in a custom folder
         custom_log_path = log_path.replace(log_path.split('/')[-1], f"Tutorial/backtests/filippo_tester_parameters_{i}_pnl_{total_profit}.log")
         print(custom_log_path)
         os.rename(log_path, custom_log_path)

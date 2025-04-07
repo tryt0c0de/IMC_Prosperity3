@@ -130,100 +130,71 @@ logger = Logger()
 
 
 class Trader:
-
     def __init__(self):
-
-        self.df_kelp = pd.DataFrame({col: [] for col in ['timestamp', 'w_price', 'ewm', 'spread']})
+        self.df_kelp = pd.DataFrame({col: [] for col in ['timestamp', 'w_price_KELP', 'w_price_SQUID_INK']})
         self.span = 30
-        self.ub = 1/1000
+        self.ub = 1 / 1000
         self.lb = -self.ub
-        self.max_holdings = {"RAINFOREST_RESIN": 50, "KELP": 50}
-        self.current_holdings = {product: 0 for product in self.max_holdings.keys()}
-
+        self.max_holdings = {"SQUID_INK": 50, "KELP": 50}
+        self.current_holdings = {product: 0 for product in self.max_holdings}
         self.max_order_size = 10
-
+        self.w_price = {}
 
     def run(self, state: TradingState):
-        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
-        # print("traderData: " + state.traderData)
-        # print("Observations: " + str(state.observations))
-
         timestamp = state.timestamp
-        w_ask = 0
-        w_bid = 0
-        ewm = None
-        spread = None
-
         result = {}
 
-        for product in ['KELP']:
-            ub = self.ub
-            lb = self.lb
-
+        for product in ['KELP', 'SQUID_INK']:
             self.current_holdings[product] = state.position.get(product, 0)
-
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
 
+            # Get best bid and ask
+            best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0] if order_depth.sell_orders else (0, 0)
+            best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0] if order_depth.buy_orders else (0, 0)
 
-            if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-            else:
-                best_ask, best_ask_amount = 0,0
+            if best_ask_amount + best_bid_amount == 0:
+                self.w_price[product] = self.df_kelp[f'w_price_{product}'].iloc[-1] if not self.df_kelp.empty else None
+                continue
 
-            if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-            else:
-                best_bid, best_bid_amount = 0,0
-
-            if best_ask_amount+best_bid_amount == 0:
-                break
-
-
-            w_price = (best_bid+best_ask)/2
+            self.w_price[product] = (best_bid + best_ask) / 2
 
             if timestamp >= self.span * 1000:
-                ewm_list = pd.Series(self.df_kelp['w_price'].iloc[-self.span+1:].tolist() + [w_price])
-                ewm = ewm_list.ewm(span=self.span, adjust=False).mean().iloc[-1]
-                spread = (w_price - ewm)/ewm
+                recent_prices = self.df_kelp[f'w_price_{product}'].iloc[-self.span + 1:].tolist() + [self.w_price[product]]
+                ewm = pd.Series(recent_prices).ewm(span=self.span, adjust=False).mean().iloc[-1]
+                spread = (self.w_price[product] - ewm) / ewm
 
                 holding_ratio = self.current_holdings[product] / self.max_holdings[product]
-                logger.print(spread)
-                ub -= holding_ratio * self.ub
-                lb -= holding_ratio * self.lb
+                ub = self.ub - holding_ratio * self.ub
+                lb = self.lb - holding_ratio * self.lb
 
-                logger.print(ub)
-                logger.print(lb)
+                logger.print(f"{product} spread: {spread}, UB: {ub}, LB: {lb}")
 
-
-
-
-
-                if spread < lb :
+                if spread < lb:
                     buy_limit = self.max_holdings[product] - self.current_holdings[product]
-                    desire = max(1, int((1 - holding_ratio) * self.max_order_size))
-                    current_opposite = min(0, self.current_holdings[product])
-                    q = min(self.max_order_size+current_opposite, desire+current_opposite, buy_limit)
+                    desired_qty = max(1, int((1 - holding_ratio) * self.max_order_size))
+                    q = min(self.max_order_size + min(0, self.current_holdings[product]),
+                            desired_qty + min(0, self.current_holdings[product]),
+                            buy_limit)
                     self.current_holdings[product] += q
                     orders.append(Order(product, best_ask, q))
 
-                if spread > ub:
+                elif spread > ub:
                     sell_limit = self.max_holdings[product] + self.current_holdings[product]
-                    desire = max(1, int((1 + holding_ratio) * self.max_order_size))
-                    current_opposite = max(0, self.current_holdings[product])
-                    q = min(self.max_order_size+current_opposite, desire+current_opposite, sell_limit)
+                    desired_qty = max(1, int((1 + holding_ratio) * self.max_order_size))
+                    q = min(self.max_order_size + max(0, self.current_holdings[product]),
+                            desired_qty + max(0, self.current_holdings[product]),
+                            sell_limit)
                     self.current_holdings[product] -= q
                     orders.append(Order(product, best_bid, -q))
 
-            self.df_kelp.loc[len(self.df_kelp)] = [timestamp, w_price, ewm, spread]
-
-
-
             result[product] = orders
 
-        traderData = "SAMPLE"  # String value holding Trader state data required. It will be delivered as TradingState.traderData on next execution.
+        # Update dataframe with new weighted prices
+        self.df_kelp.loc[len(self.df_kelp)] = [timestamp] + [self.w_price[product] for product in ['KELP', 'SQUID_INK']]
 
+        traderData = "SAMPLE"
         conversions = 1
-        logger.flush(state, result, conversions, traderData)
 
+        logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData

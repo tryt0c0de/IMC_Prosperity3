@@ -3,6 +3,7 @@ from typing import List
 import string
 import json
 from typing import Any
+import numpy as np
 
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 #from Logger import Logger
@@ -132,7 +133,11 @@ class Trader:
         result = {}
         max_holdings = {"RAINFOREST_RESIN": 50, "KELP": 50}
         current_holdings = {product: 0 for product in max_holdings.keys()}
-
+        kelp_mid_prices = []
+        S_0_KELP = 2000
+        r_KELP = 5.370821642624678e-07
+        sigma_sq_KELP = 1.4916870384912934e-07
+        i_KELP = 0
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
@@ -140,7 +145,6 @@ class Trader:
             # print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             if product == "RAINFOREST_RESIN":
                 acceptable_price = 10000
-                total_add_pos = 0
             # elif product == "KELP":
             #     acceptable_price = 2015
 
@@ -175,11 +179,31 @@ class Trader:
                 # for i in range (max_holdings[product]):
                 #     orders.append(Order(product, acceptable_price + 1, -1))
                 #     orders.append(Order(product, acceptable_price - 1, 1))
+
+            if product == 'KELP':
+                if len(order_depth.sell_orders) != 0 and len(order_depth.sell_orders) != 0:
+                    current_price = (int(list(order_depth.buy_orders.items())[0][0]) + int(list(order_depth.sell_orders.items())[0][0])) / 2
+                    #kelp_mid_prices.append(current_price)
+                    fair_price = np.exp(r_KELP * i_KELP + 0.5 * sigma_sq_KELP * i_KELP)
+               
+                    if current_price <= fair_price:
+                        best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+                        if current_holdings[product] < max_holdings[product]:
+                                buy_amount = min(max_holdings[product] - current_holdings[product], -best_ask_amount)
+                                orders.append(Order(product, best_ask, buy_amount))
+                                current_holdings[product] += buy_amount
+                    elif current_price >= fair_price * 1.001:
+                        best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+                        if current_holdings[product] > -1 * max_holdings[product]:
+                                sell_amount = min(current_holdings[product] + max_holdings[product], best_bid_amount)
+                                orders.append(Order(product, best_bid, -sell_amount))
+                                current_holdings[product] -= sell_amount
+            i_KELP += 1
             result[product] = orders
     
     
         traderData = "SAMPLE" # String value holding Trader state data required. It will be delivered as TradingState.traderData on next execution.
         
         conversions = 1
-        logger.flush(state, result,conversions,traderData)
+        logger.flush(state,result,conversions,traderData)
         return result, conversions, traderData

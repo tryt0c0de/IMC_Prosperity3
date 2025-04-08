@@ -130,10 +130,10 @@ logger = Logger()
 
 
 class Trader:
-    def __init__(self):
+    def __init__(self, ub):
         self.df_kelp = pd.DataFrame({col: [] for col in ['timestamp', 'w_price_KELP', 'w_price_SQUID_INK']})
         self.span = 30
-        self.ub = 1 / 1000
+        self.ub = 1/(ub[0])
         self.lb = -self.ub
         self.max_holdings = {"SQUID_INK": 50, "KELP": 50}
         self.current_holdings = {product: 0 for product in self.max_holdings}

@@ -199,6 +199,7 @@ class Trader:
                                 orders.append(Order(product, best_bid, -sell_amount))
                                 current_holdings[product] -= sell_amount
             i_KELP += 1
+            # sdocw
             result[product] = orders
     
     

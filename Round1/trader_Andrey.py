@@ -178,30 +178,26 @@ class Trader:
 
                 elif self.current_holdings[product]/self.max_holdings[product] < -0.9:
                     orders.append(Order(product, acceptable_price, 5))
-
-                # for i in range (max_holdings[product]):
-                #     orders.append(Order(product, acceptable_price + 1, -1))
-                #     orders.append(Order(product, acceptable_price - 1, 1))
-
-            if product == 'KELP':
-                if len(order_depth.sell_orders) != 0 and len(order_depth.sell_orders) != 0:
-                    current_price = (int(list(order_depth.buy_orders.items())[0][0]) + int(list(order_depth.sell_orders.items())[0][0])) / 2
-                    #kelp_mid_prices.append(current_price)
-                    fair_price = S_0_KELP * np.exp(r_KELP * self.i_kelp + 0.5 * sigma_sq_KELP * self.i_kelp)
+                    
+            # if product == 'KELP':
+            #     if len(order_depth.sell_orders) != 0 and len(order_depth.sell_orders) != 0:
+            #         current_price = (int(list(order_depth.buy_orders.items())[0][0]) + int(list(order_depth.sell_orders.items())[0][0])) / 2
+            #         #kelp_mid_prices.append(current_price)
+            #         fair_price = S_0_KELP * np.exp(r_KELP * self.i_kelp + 0.5 * sigma_sq_KELP * self.i_kelp)
                
-                    if current_price >= fair_price * 1.005:
-                        best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                        if self.current_holdings[product] < self.max_holdings[product]:
-                                buy_amount = min(self.max_holdings[product] - self.current_holdings[product], -best_ask_amount)
-                                orders.append(Order(product, best_ask, buy_amount))
-                                self.current_holdings[product] += buy_amount
-                    elif current_price <= fair_price:
-                        best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                        if self.current_holdings[product] > -1 * self.max_holdings[product]:
-                                sell_amount = min(self.current_holdings[product] + self.max_holdings[product], best_bid_amount)
-                                orders.append(Order(product, best_bid, -sell_amount))
-                                self.current_holdings[product] -= sell_amount
-                self.i_kelp += 1
+            #         if current_price >= fair_price * 1.005:
+            #             best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+            #             if self.current_holdings[product] > -1 * self.max_holdings[product]:
+            #                     sell_amount = min(self.current_holdings[product] + self.max_holdings[product], best_bid_amount, 5)
+            #                     orders.append(Order(product, best_bid, -sell_amount))
+            #                     self.current_holdings[product] -= sell_amount
+            #         elif current_price <= fair_price * 0.999:
+            #             best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+            #             if self.current_holdings[product] < self.max_holdings[product]:
+            #                     buy_amount = min(self.max_holdings[product] - self.current_holdings[product], -best_ask_amount)
+            #                     orders.append(Order(product, best_ask, buy_amount))
+            #                     self.current_holdings[product] += buy_amount
+            #     self.i_kelp += 1
             result[product] = orders
     
     

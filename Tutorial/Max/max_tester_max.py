@@ -93,22 +93,25 @@ test_type = "full_round"  # Change to "single_day" or "full_round"
 day_to_test = -2  # Only used if test_type is "single_day"
 
 max_profit = 0
-max_profit_parameters = (0,0)
+max_profit_parameters = (0, 0, 0, 0, 0)
 
-rolling_windows_to_test = [20]#[14,17,20,23, 26]
-ub_windows_to_test = [1000]#[600, 800, 1000, 1200, 1400]
 
-for i in rolling_windows_to_test:
-    for j in ub_windows_to_test:
+span_fast = [50, 100, 150]
+span_slow = [500, 1000, 1500]
+multiple = [0.5, 1, 1.5]
 
-        if test_type == "single_day":
-            total_profit = test_single_day(i, day_to_test)
-        else:  # full_round
-            total_profit = test_full_round(i,j)
+for i in span_fast:
+    for j in span_slow:
+        for k in multiple:
 
-        if total_profit > max_profit:
-            max_profit = total_profit
-            max_profit_parameters = (i,j)
+            if test_type == "single_day":
+                total_profit = test_single_day(i, day_to_test)
+            else:  # full_round
+                total_profit = test_full_round(i,j, k)
+
+            if total_profit > max_profit:
+                max_profit = total_profit
+                max_profit_parameters = (i,j, k)
 
 print(f"Max profit: {max_profit}")
 print(f"Max profit parameters: {max_profit_parameters}")

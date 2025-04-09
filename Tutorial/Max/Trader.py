@@ -133,20 +133,21 @@ logger = Logger()
 class Trader:
     def __init__(self, params=None):
         if not params:
-            params = [100, 1000, 100]
+            params = [100, 1000, 1]
         self.products = ['KELP', 'SQUID_INK']
         self.products = ['SQUID_INK']
         self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['std', 'ewm_fast', 'ewm_slow', 'w_price', 'ub', 'spread'] for prod in self.products]})
         self.span_fast = int(params[0])
         self.span_slow = int(params[1])
-        self.base_ub = 1/params[2]
+        self.coef1 = 1+ (0.005 * params[2])
+        self.coef2 = 1 + (0.01 * params[2])
+        self.coef3 = 1 + (0.025 * params[2])
         self.max_holdings = {prod: 50 for prod in self.products}
         self.current_holdings = {prod: 0 for prod in self.products}
         #self.max_order_size = 10
         self.w_price = {}
         self.ewm_fast = {}
         self.ewm_slow = {}
-        self.ub_product = {'KELP': self.base_ub/3,'SQUID_INK': self.base_ub}
         self.ub = {}
         self.spread = {}
         self.holding_ratio = {}
@@ -212,42 +213,41 @@ class Trader:
 
                 self.ewm_fast[product] = moving(self.span_fast).mean().iloc[-1]
                 self.ewm_slow[product] = moving(self.span_slow).mean().iloc[-1]
-                '''self.spread[product] = (self.w_price[product] - self.ewm_fast[product]) / self.ewm_fast[product]
-
-                self.std[product] = 0#moving(10).std().iloc[-1] / self.ewm[product]
-
-
-                self.holding_ratio[product] = 0#self.current_holdings[product] / self.max_holdings[product]
-                self.ub[product] = self.ub_product[product] * (1-self.holding_ratio[product])
-
-                self.ub[product] += self.std[product]# / self.ewm[product] / 100'''
-
-                '''self.delta_spread[product] = self.spread[product] / self.df[f'spread_{product}'].iloc[-1]
-                self.ub[product] *= 10 * self.delta_spread[product] / self.ewm[product]'''
 
                 curr_long = (self.current_holdings[product] > 0)
                 curr_short = (self.current_holdings[product] < 0)
 
                 q = 0
                 neutral = True
+                ratio = self.ewm_slow[product]/self.ewm_fast[product]
+                self.std[product] = ratio
 
-                if self.ewm_fast[product] < self.ewm_slow[product] and not curr_short:
-                    q = - self.current_holdings[product]
-                    if self.ewm_fast[product] * 1.005 < self.ewm_slow[product]:
+
+
+                if ratio > self.coef1:
+                    if curr_long:
+                        q = -self.current_holdings[product]
+                    if ratio > self.coef2:
+                        neutral = False
                         q -= self.max_holdings[product]
+                    if ratio > self.coef3:
+                        q = self.max_holdings[product] - self.current_holdings[product]
+
+                elif ratio < 2-self.coef1:
+                    if curr_short:
+                        q = -self.current_holdings[product]
+                    if ratio < 2-self.coef2:
                         neutral = False
+                        q -= -self.max_holdings[product]
+                    if ratio < 2-self.coef3:
+                        q = -self.max_holdings[product] + self.current_holdings[product]
 
 
-                elif self.ewm_fast[product] > self.ewm_slow[product] and not curr_long:
-                    q = -self.current_holdings[product]
-                    if self.ewm_fast[product] > 1.005 * self.ewm_slow[product]:
-                        q += self.max_holdings[product]
-                        neutral = False
 
-                if q != 0:
+                '''if q != 0:
                     self.signal_df.loc[len(self.signal_df)-1] = [timestamp, 0,0,1] if neutral else ([timestamp, 1,0,0] if q>0 else [timestamp, 0,1,0])
 
-
+'''
 
 
 
@@ -262,10 +262,10 @@ class Trader:
 
 
                 if q < 0:
-                    orders.append(Order(product, best_bid[0], -best_bid_amount[0]))
+                    orders.append(Order(product, best_bid[0], max(q, -best_bid_amount[0])))
 
                 elif q > 0:
-                    orders.append(Order(product, best_ask[0], -best_ask_amount[0]))
+                    orders.append(Order(product, best_ask[0], min(q, -best_ask_amount[0])))
 
 
             result[product] = orders
@@ -274,12 +274,12 @@ class Trader:
         self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm_fast, self.ewm_slow, self.w_price, self.ub, self.spread] for prod in self.products]
 
 
-        if timestamp==990000:
+        '''if timestamp==990000:
             with open('/Users/maximesolere/desktop/log.txt', "a") as file:
                 file.write(f"{self.df['w_price_SQUID_INK'].max()}")
             self.df.to_csv('/Users/maximesolere/desktop/df.csv')
             self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
-            return 1
+            #return 1'''
 
 
 

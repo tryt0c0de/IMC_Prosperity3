@@ -5,8 +5,8 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-from Logger import Logger
-logger = Logger()
+#from Logger import Logger
+#logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -22,13 +22,13 @@ PARAMS = {
         "disregard_edge": 1,  # disregards orders for joining or pennying within this value from fair
         "join_edge": 2,  # joins orders within this edge
         "default_edge": 4,
-        "soft_position_limit": 10,
+        "soft_position_limit": 20,
     },
     Product.KELP: {
         "take_width": 1,
         "clear_width": 0,
         "prevent_adverse": True,
-        "adverse_volume": 15,
+        "adverse_volume": 25,
         "reversion_beta": -0.229,
         "disregard_edge": 1,
         "join_edge": 0,
@@ -38,7 +38,7 @@ PARAMS = {
 
 
 class Trader:
-    def __init__(self, params=[]):
+    def __init__(self, params=None):
         #if params is [1.0]:
         self.params = PARAMS
         #self.params = params
@@ -159,7 +159,7 @@ class Trader:
 
         return buy_order_volume, sell_order_volume
 
-    def starfruit_fair_value(self, order_depth: OrderDepth, traderObject) -> float:
+    def kelp_fair_value(self, order_depth: OrderDepth, traderObject) -> float:
         if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
             best_ask = min(order_depth.sell_orders.keys())
             best_bid = max(order_depth.buy_orders.keys())
@@ -178,15 +178,15 @@ class Trader:
             mm_ask = min(filtered_ask) if len(filtered_ask) > 0 else None
             mm_bid = max(filtered_bid) if len(filtered_bid) > 0 else None
             if mm_ask == None or mm_bid == None:
-                if traderObject.get("starfruit_last_price", None) == None:
+                if traderObject.get("kelp_last_price", None) == None:
                     mmmid_price = (best_ask + best_bid) / 2
                 else:
-                    mmmid_price = traderObject["starfruit_last_price"]
+                    mmmid_price = traderObject["kelp_last_price"]
             else:
                 mmmid_price = (mm_ask + mm_bid) / 2
 
-            if traderObject.get("starfruit_last_price", None) != None:
-                last_price = traderObject["starfruit_last_price"]
+            if traderObject.get("kelp_last_price", None) != None:
+                last_price = traderObject["kelp_last_price"]
                 last_returns = (mmmid_price - last_price) / last_price
                 pred_returns = (
                     last_returns * self.params[Product.KELP]["reversion_beta"]
@@ -194,7 +194,7 @@ class Trader:
                 fair = mmmid_price + (mmmid_price * pred_returns)
             else:
                 fair = mmmid_price
-            traderObject["starfruit_last_price"] = mmmid_price
+            traderObject["kelp_last_price"] = mmmid_price
             return fair
         return None
 
@@ -362,41 +362,41 @@ class Trader:
             )
 
         if Product.KELP in self.params and Product.KELP in state.order_depths:
-            starfruit_position = (
+            kelp_position = (
                 state.position[Product.KELP]
                 if Product.KELP in state.position
                 else 0
             )
-            starfruit_fair_value = self.starfruit_fair_value(
+            kelp_fair_value = self.kelp_fair_value(
                 state.order_depths[Product.KELP], traderObject
             )
-            starfruit_take_orders, buy_order_volume, sell_order_volume = (
+            kelp_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.KELP,
                     state.order_depths[Product.KELP],
-                    starfruit_fair_value,
+                    kelp_fair_value,
                     self.params[Product.KELP]["take_width"],
-                    starfruit_position,
+                    kelp_position,
                     self.params[Product.KELP]["prevent_adverse"],
                     self.params[Product.KELP]["adverse_volume"],
                 )
             )
-            starfruit_clear_orders, buy_order_volume, sell_order_volume = (
+            kelp_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.KELP,
                     state.order_depths[Product.KELP],
-                    starfruit_fair_value,
+                    kelp_fair_value,
                     self.params[Product.KELP]["clear_width"],
-                    starfruit_position,
+                    kelp_position,
                     buy_order_volume,
                     sell_order_volume,
                 )
             )
-            starfruit_make_orders, _, _ = self.make_orders(
+            kelp_make_orders, _, _ = self.make_orders(
                 Product.KELP,
                 state.order_depths[Product.KELP],
-                starfruit_fair_value,
-                starfruit_position,
+                kelp_fair_value,
+                kelp_position,
                 buy_order_volume,
                 sell_order_volume,
                 self.params[Product.KELP]["disregard_edge"],
@@ -404,11 +404,11 @@ class Trader:
                 self.params[Product.KELP]["default_edge"],
             )
             result[Product.KELP] = (
-                starfruit_take_orders + starfruit_clear_orders + starfruit_make_orders
+                kelp_take_orders + kelp_clear_orders + kelp_make_orders
             )
 
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
-        logger.flush(state,result,conversions,traderData)
+        #logger.flush(state,result,conversions,traderData)
 
         return result, conversions, traderData

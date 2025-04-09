@@ -133,22 +133,26 @@ logger = Logger()
 class Trader:
     def __init__(self, params=None):
         if not params:
-            params = [50, 100]
+            params = [100, 1000, 100]
         self.products = ['KELP', 'SQUID_INK']
-        #self.products = ['SQUID_INK']
-        self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['std', 'ewm', 'w_price', 'ub', 'spread'] for prod in self.products]})
-        self.span = int(params[0])
-        self.base_ub = 1/params[1]
+        self.products = ['SQUID_INK']
+        self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['std', 'ewm_fast', 'ewm_slow', 'w_price', 'ub', 'spread'] for prod in self.products]})
+        self.span_fast = int(params[0])
+        self.span_slow = int(params[1])
+        self.base_ub = 1/params[2]
         self.max_holdings = {prod: 50 for prod in self.products}
         self.current_holdings = {prod: 0 for prod in self.products}
         #self.max_order_size = 10
         self.w_price = {}
-        self.ewm = {}
+        self.ewm_fast = {}
+        self.ewm_slow = {}
         self.ub_product = {'KELP': self.base_ub/3,'SQUID_INK': self.base_ub}
         self.ub = {}
         self.spread = {}
         self.holding_ratio = {}
         self.std = {}
+
+        self.signal_df = pd.DataFrame({col:[] for col in ['timestamp', 'buy', 'sell', 'neutral']})
 
 
 
@@ -159,10 +163,12 @@ class Trader:
 
 
     def run(self, state: TradingState):
+
         traderData = "SAMPLE"
         conversions = 1
 
         timestamp = state.timestamp
+        self.signal_df.loc[len(self.signal_df)] = [timestamp, 0, 0, 0]
         result = {}
 
         for product in self.products:
@@ -171,14 +177,20 @@ class Trader:
             orders: List[Order] = []
 
             # Get best bid and ask
-            best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0] if order_depth.sell_orders else (0, 0)
-            best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0] if order_depth.buy_orders else (0, 0)
+            best_ask, best_ask_amount = zip(*list(order_depth.sell_orders.items())) if order_depth.sell_orders else ([], [])
+            best_bid, best_bid_amount = zip(*list(order_depth.buy_orders.items())) if order_depth.buy_orders else ([], [])
 
-            if best_ask_amount + best_bid_amount == 0:
+            best_ask = list(best_ask)
+            best_ask_amount = list(best_ask_amount)
+            best_bid = list(best_bid)
+            best_bid_amount = list(best_bid_amount)
+
+            if not (best_ask_amount + best_bid_amount):
                 if not self.df.empty:
                     for prod in self.products:
                         self.std[prod] = self.df[f'std_{prod}'].iloc[-1]
-                        self.ewm[prod] = self.df[f'ewm_{prod}'].iloc[-1]
+                        self.ewm_fast[prod] = self.df[f'ewm_fast_{prod}'].iloc[-1]
+                        self.ewm_slow[prod] = self.df[f'ewm_slow_{prod}'].iloc[-1]
                         self.w_price[prod] = self.df[f'w_price_{prod}'].iloc[-1]
                         self.ub[prod] = self.df[f'ub_{prod}'].iloc[-1]
                         self.spread[prod] = self.df[f'spread_{prod}'].iloc[-1]
@@ -188,25 +200,27 @@ class Trader:
                     return result, conversions, traderData
                 break
 
-            self.w_price[product] = (best_bid + best_ask) / 2
+            self.w_price[product] = (best_bid[0] + best_ask[0]) / 2
 
-            self.std[product], self.ewm[product], self.ub[product], self.spread[product] = 0,0,0,0
 
-            if timestamp >= self.span * 100:
+            self.std[product], self.ewm_fast[product], self.ewm_slow[product], self.ub[product], self.spread[product] = 0,0,0,0,0
+
+            if timestamp >= self.span_slow * 100:
                 # ADJUST ?????
                 def moving(span):
                     return pd.Series(self.df[f'w_price_{product}'].tolist() + [self.w_price[product]]).ewm(span=span, adjust=False)
 
-                self.ewm[product] = moving(self.span).mean().iloc[-1]
-                self.spread[product] = (self.w_price[product] - self.ewm[product]) / self.ewm[product]
+                self.ewm_fast[product] = moving(self.span_fast).mean().iloc[-1]
+                self.ewm_slow[product] = moving(self.span_slow).mean().iloc[-1]
+                '''self.spread[product] = (self.w_price[product] - self.ewm_fast[product]) / self.ewm_fast[product]
 
-                self.std[product] = moving(10).std().iloc[-1] / self.ewm[product]
+                self.std[product] = 0#moving(10).std().iloc[-1] / self.ewm[product]
 
 
                 self.holding_ratio[product] = 0#self.current_holdings[product] / self.max_holdings[product]
                 self.ub[product] = self.ub_product[product] * (1-self.holding_ratio[product])
 
-                self.ub[product] += self.std[product]# / self.ewm[product] / 100
+                self.ub[product] += self.std[product]# / self.ewm[product] / 100'''
 
                 '''self.delta_spread[product] = self.spread[product] / self.df[f'spread_{product}'].iloc[-1]
                 self.ub[product] *= 10 * self.delta_spread[product] / self.ewm[product]'''
@@ -215,37 +229,57 @@ class Trader:
                 curr_short = (self.current_holdings[product] < 0)
 
                 q = 0
+                neutral = True
 
-                if self.spread[product] < 0 and not curr_long:
-                    q = -self.current_holdings[product]
-                    if self.spread[product] < -self.ub[product]:
-                        q += self.max_holdings[product]
-
-                if self.spread[product] > 0 and not curr_short:
-                    q = -self.current_holdings[product]
-                    if self.spread[product] > self.ub[product]:
+                if self.ewm_fast[product] < self.ewm_slow[product] and not curr_short:
+                    q = - self.current_holdings[product]
+                    if self.ewm_fast[product] * 1.005 < self.ewm_slow[product]:
                         q -= self.max_holdings[product]
+                        neutral = False
+
+
+                elif self.ewm_fast[product] > self.ewm_slow[product] and not curr_long:
+                    q = -self.current_holdings[product]
+                    if self.ewm_fast[product] > 1.005 * self.ewm_slow[product]:
+                        q += self.max_holdings[product]
+                        neutral = False
+
+                if q != 0:
+                    self.signal_df.loc[len(self.signal_df)-1] = [timestamp, 0,0,1] if neutral else ([timestamp, 1,0,0] if q>0 else [timestamp, 0,1,0])
+
+
+
+
+
 
                 '''if q!= 0:
                     with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                        file.write(f"{timestamp}, {q}\n")'''
+                        file.write(f"{best_bid}, {q}\n")
+                        file.write(f"{best_bid_amount}, {q}\n")
+                        file.write(f"{best_ask}, {q}\n")
+                        file.write(f"{best_ask_amount}, {q}\n")
+                        file.write('\n')'''
 
-                if q<0:
-                    orders.append(Order(product, best_bid, q))
-                elif q>0:
-                    orders.append(Order(product, best_ask, q))
+
+                if q < 0:
+                    orders.append(Order(product, best_bid[0], -best_bid_amount[0]))
+
+                elif q > 0:
+                    orders.append(Order(product, best_ask[0], -best_ask_amount[0]))
 
 
             result[product] = orders
 
         # Update dataframe with new weighted prices
-        self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm, self.w_price, self.ub, self.spread] for prod in self.products]
-
+        self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm_fast, self.ewm_slow, self.w_price, self.ub, self.spread] for prod in self.products]
 
 
         if timestamp==990000:
+            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                file.write(f"{self.df['w_price_SQUID_INK'].max()}")
             self.df.to_csv('/Users/maximesolere/desktop/df.csv')
-            #return 1
+            self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
+            return 1
 
 
 

@@ -244,10 +244,10 @@ class Trader:
 
 
 
-                '''if q != 0:
+                if q != 0:
                     self.signal_df.loc[len(self.signal_df)-1] = [timestamp, 0,0,1] if neutral else ([timestamp, 1,0,0] if q>0 else [timestamp, 0,1,0])
 
-'''
+
 
 
 
@@ -274,12 +274,12 @@ class Trader:
         self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm_fast, self.ewm_slow, self.w_price, self.ub, self.spread] for prod in self.products]
 
 
-        '''if timestamp==990000:
+        if timestamp==990000:
             with open('/Users/maximesolere/desktop/log.txt', "a") as file:
                 file.write(f"{self.df['w_price_SQUID_INK'].max()}")
             self.df.to_csv('/Users/maximesolere/desktop/df.csv')
             self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
-            #return 1'''
+            #return 1
 
 
 

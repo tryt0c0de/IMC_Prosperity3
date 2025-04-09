@@ -11,9 +11,9 @@ from typing import List
 import string
 import json
 from typing import Any
-#from Logger import Logger
+from Logger import Logger
 
-#logger = Logger()
+logger = Logger()
 
 
 
@@ -125,5 +125,5 @@ class Trader:
         traderData = "SAMPLE"
         conversions = 1
 
-        #logger.flush(state, result, conversions, traderData)
+        logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData

@@ -17,13 +17,13 @@ class Product:
 
 PARAMS = {
     Product.RAINFOREST_RESIN: {
-        "fair_value": 1000,
-        "take_width": 1.7,
+        "fair_value": 10000,
+        "take_width": 1,
         "clear_width": 0,
         # for making
-        "disregard_edge": 0.1,  # disregards orders for joining or pennying within this value from fair
-        "join_edge": 20,  # joins orders within this edge
-        "default_edge": 3,
+        "disregard_edge": 1,  # disregards orders for joining or pennying within this value from fair
+        "join_edge": 2,  # joins orders within this edge
+        "default_edge": 4,
         "soft_position_limit": 30,
     },
     Product.KELP: {

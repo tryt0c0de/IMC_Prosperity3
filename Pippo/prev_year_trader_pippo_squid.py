@@ -9,13 +9,12 @@ from Logger import Logger
 logger = Logger()
 
 class Product:
-    RAINFOREST_RESIN = "SQUID_INK"
+    SQUID_INK = "SQUID_INK"
     KELP = "KELP"
 
 
 PARAMS = {
-    Product.RAINFOREST_RESIN: {
-        "fair_value": 10000,
+    Product.SQUID_INK: {
         "take_width": 1,
         "clear_width": 0,
         # for making
@@ -43,19 +42,19 @@ class Trader:
         if params is None or len(params) != 2:
             # Set default limits if not provided
             self.LIMIT = {
-                Product.RAINFOREST_RESIN: 50,
+                Product.SQUID_INK: 50,
                 Product.KELP: 20
             }
         else:
             self.LIMIT = {
-                Product.RAINFOREST_RESIN: params[0],
+                Product.SQUID_INK: params[0],
                 Product.KELP: params[1]
             }
 
         # Init PnL tracking if you're using the enhanced version
-        self.realized_pnl = {Product.RAINFOREST_RESIN: 0, Product.KELP: 0}
-        self.last_price = {Product.RAINFOREST_RESIN: None, Product.KELP: None}
-        self.recent_prices = {Product.RAINFOREST_RESIN: [], Product.KELP: []}
+        self.realized_pnl = {Product.SQUID_INK: 0, Product.KELP: 0}
+        self.last_price = {Product.SQUID_INK: None, Product.KELP: None}
+        self.recent_prices = {Product.SQUID_INK: [], Product.KELP: []}
         self.vol_window = 10
 
     def fair_value(self, order_depth: OrderDepth):
@@ -353,45 +352,45 @@ class Trader:
         result = {}
 
         
-        if Product.RAINFOREST_RESIN in self.params and Product.RAINFOREST_RESIN in state.order_depths:
-            order_depth = state.order_depths[Product.RAINFOREST_RESIN]
-            position = state.position.get(Product.RAINFOREST_RESIN, 0)
+        if Product.SQUID_INK in self.params and Product.SQUID_INK in state.order_depths:
+            order_depth = state.order_depths[Product.SQUID_INK]
+            position = state.position.get(Product.SQUID_INK, 0)
             fair_value = self.fair_value(order_depth)
 
             if fair_value is not None:
                 take_orders, buy_vol, sell_vol = self.take_orders(
-                Product.RAINFOREST_RESIN,
+                Product.SQUID_INK,
                 order_depth,
                 fair_value,
-                self.params[Product.RAINFOREST_RESIN]["take_width"],
+                self.params[Product.SQUID_INK]["take_width"],
                 position,
                 )
 
             clear_orders, buy_vol, sell_vol = self.clear_orders(
-                Product.RAINFOREST_RESIN,
+                Product.SQUID_INK,
                 order_depth,
                 fair_value,
-                self.params[Product.RAINFOREST_RESIN]["clear_width"],
+                self.params[Product.SQUID_INK]["clear_width"],
                 position,
                 buy_vol,
                 sell_vol,
             )
 
             make_orders, _, _ = self.make_orders(
-                Product.RAINFOREST_RESIN,
+                Product.SQUID_INK,
                 order_depth,
                 fair_value,
                 position,
                 buy_vol,
                 sell_vol,
-                self.params[Product.RAINFOREST_RESIN]["disregard_edge"],
-                self.params[Product.RAINFOREST_RESIN]["join_edge"],
-                self.params[Product.RAINFOREST_RESIN]["default_edge"],
+                self.params[Product.SQUID_INK]["disregard_edge"],
+                self.params[Product.SQUID_INK]["join_edge"],
+                self.params[Product.SQUID_INK]["default_edge"],
                 True,
-                self.params[Product.RAINFOREST_RESIN]["soft_position_limit"],
+                self.params[Product.SQUID_INK]["soft_position_limit"],
             )
 
-            result[Product.RAINFOREST_RESIN] = take_orders + clear_orders + make_orders
+            result[Product.SQUID_INK] = take_orders + clear_orders + make_orders
 
 
 

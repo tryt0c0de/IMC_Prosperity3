@@ -43,7 +43,7 @@ class Trader:
         if params is None or len(params) != 2:
             # Set default limits if not provided
             self.LIMIT = {
-                Product.RAINFOREST_RESIN: 20,
+                Product.RAINFOREST_RESIN: 50,
                 Product.KELP: 20
             }
         else:

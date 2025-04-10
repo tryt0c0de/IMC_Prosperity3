@@ -5,12 +5,13 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-#from Logger import Logger
-#logger = Logger()
+from Logger import Logger
+logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
     KELP = "KELP"
+    SQUID_INK = "SQUID_INK"
 
 
 PARAMS = {
@@ -34,6 +35,15 @@ PARAMS = {
         "join_edge": 0,
         "default_edge": 1,
     },
+    Product.SQUID_INK: {
+        "take_width": 1,
+        "clear_width": 0,
+        # for making
+        "disregard_edge": 1,  # disregards orders for joining or pennying within this value from fair
+        "join_edge": 2,  # joins orders within this edge
+        "default_edge": 4,
+        "soft_position_limit": 10,
+    }
 }
 
 
@@ -43,7 +53,7 @@ class Trader:
         self.params = PARAMS
         #self.params = params
 
-        self.LIMIT = {Product.RAINFOREST_RESIN: params[0], Product.KELP: params[1]}
+        self.LIMIT = {Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50}
 
     def take_best_orders(
         self,
@@ -197,6 +207,17 @@ class Trader:
             traderObject["kelp_last_price"] = mmmid_price
             return fair
         return None
+    def fair_value_squid_ink(self, order_depth: OrderDepth):
+        if order_depth.sell_orders and order_depth.buy_orders:
+            best_ask = min(order_depth.sell_orders.keys())
+            best_bid = max(order_depth.buy_orders.keys())
+            return (best_ask + best_bid) / 2
+        elif order_depth.sell_orders:
+            return min(order_depth.sell_orders.keys())
+        elif order_depth.buy_orders:
+            return max(order_depth.buy_orders.keys())
+        return None
+    
 
     def take_orders(
         self,
@@ -406,9 +427,48 @@ class Trader:
             result[Product.KELP] = (
                 kelp_take_orders + kelp_clear_orders + kelp_make_orders
             )
+        if Product.SQUID_INK in self.params and Product.SQUID_INK in state.order_depths:
+            order_depth = state.order_depths[Product.SQUID_INK]
+            position = state.position.get(Product.SQUID_INK, 0)
+            fair_value = self.fair_value_squid_ink(order_depth)
+
+            if fair_value is not None:
+                take_orders, buy_vol, sell_vol = self.take_orders(
+                Product.SQUID_INK,
+                order_depth,
+                fair_value,
+                self.params[Product.SQUID_INK]["take_width"],
+                position,
+                )
+
+            clear_orders, buy_vol, sell_vol = self.clear_orders(
+                Product.SQUID_INK,
+                order_depth,
+                fair_value,
+                self.params[Product.SQUID_INK]["clear_width"],
+                position,
+                buy_vol,
+                sell_vol,
+            )
+
+            make_orders, _, _ = self.make_orders(
+                Product.SQUID_INK,
+                order_depth,
+                fair_value,
+                position,
+                buy_vol,
+                sell_vol,
+                self.params[Product.SQUID_INK]["disregard_edge"],
+                self.params[Product.SQUID_INK]["join_edge"],
+                self.params[Product.SQUID_INK]["default_edge"],
+                True,
+                self.params[Product.SQUID_INK]["soft_position_limit"],
+            )
+
+            result[Product.SQUID_INK] = take_orders + clear_orders + make_orders
 
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
-        #logger.flush(state,result,conversions,traderData)
+        logger.flush(state,result,conversions,traderData)
 
         return result, conversions, traderData

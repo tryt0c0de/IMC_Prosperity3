@@ -1,6 +1,0 @@
-README.md
-setup.py
-ToolsIMC.egg-info/PKG-INFO
-ToolsIMC.egg-info/SOURCES.txt
-ToolsIMC.egg-info/dependency_links.txt
-ToolsIMC.egg-info/top_level.txt

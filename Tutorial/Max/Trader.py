@@ -133,9 +133,9 @@ logger = Logger()
 class Trader:
     def __init__(self, params=None):
         if not params:
-            params = [10, 100, 1]
+            params = [100, 1000, 1]
         self.products = ['KELP', 'SQUID_INK']
-        self.products = ['SQUID_INK']
+        self.products = ['KELP']
         self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['std', 'ewm_fast', 'ewm_slow', 'w_price', 'ub', 'spread'] for prod in self.products]})
         self.span_fast = int(params[0])
         self.span_slow = int(params[1])
@@ -209,7 +209,7 @@ class Trader:
             self.std[product], self.ewm_fast[product], self.ewm_slow[product], self.ub[product], self.spread[product] = 0,0,0,0,0
 
 
-            look = 50
+            look = 500
             if timestamp >= (look + self.span_slow) * 100:
                 # ADJUST ?????
                 def moving(span):
@@ -227,19 +227,19 @@ class Trader:
 
                 bound = 0#.005
 
-                if self.spread[product] > 1+bound/2:
+                if self.spread[product] > 1+bound:
                     if curr_long:
                         q = -1
-                    elif (not curr_short) and self.df[f'spread_{product}'].iloc[-look:].min() < 1-bound/2 and self.spread[product] > 1+bound:
+                    elif (not curr_short) and self.df[f'spread_{product}'].iloc[-look:].min() < 1-bound/2:# and self.spread[product] > 1+bound:
                         q = -1
                         neutral = False
 
 
 
-                if self.spread[product] < 1-bound/2:
+                if self.spread[product] < 1-bound:
                     if curr_short:
                         q = 1
-                    elif (not curr_long) and self.df[f'spread_{product}'].iloc[-look:].max() > 1+bound/2 and self.spread[product] < 1-bound:
+                    elif (not curr_long) and self.df[f'spread_{product}'].iloc[-look:].max() > 1+bound/2:# and self.spread[product] < 1-bound:
                         q = 1
                         neutral = False
 
@@ -297,9 +297,9 @@ class Trader:
         self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm_fast, self.ewm_slow, self.w_price, self.ub, self.spread] for prod in self.products]
 
 
-        if timestamp==100000:
+        if timestamp==990000:
             with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                file.write(f"{self.df['w_price_SQUID_INK'].max()}")
+                file.write(f"{self.df['w_price_KELP'].max()}")
             self.df.to_csv('/Users/maximesolere/desktop/df.csv')
             self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
             #return 1

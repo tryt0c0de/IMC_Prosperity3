@@ -118,15 +118,12 @@ class Trader:
 
                 q *= self.max_holdings[product]
 
-
                 if neutral and q != 0:
                     q = - self.current_holdings[product]
 
 
                 if q != 0:
                     self.signal_df.loc[len(self.signal_df)-1] = [timestamp, 1 if neutral else q]
-
-
 
 
                 if q < 0:

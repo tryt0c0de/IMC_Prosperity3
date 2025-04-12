@@ -3,9 +3,9 @@ import subprocess
 import re
 import time
 from tqdm import tqdm
-
+import numpy as np
 def test_single_day(fast, slow, mult, day_number):
-    command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/Trader.py",
+    command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/Trader.py",
                f"1-{day_number}", "--parameters", f"{fast},{slow},{mult}"]
 
     # Run the command
@@ -38,10 +38,10 @@ def test_single_day(fast, slow, mult, day_number):
 
 
             # Rename the log file to include the parameters and the profit in a custom folder
-            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/backtests/max_tester_{fast}_{slow}_{mult}_pnl_{total_profit}_{day_number}.log"
+            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/backtests/max_tester_{fast}_{slow}_{mult}_pnl_{total_profit}_{day_number}.log"
 
             #print(custom_log_path)
-            log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/' + log_path
+            log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/' + log_path
 
             os.rename(log_path, custom_log_path)
 
@@ -52,9 +52,9 @@ def test_single_day(fast, slow, mult, day_number):
     return 0
 
 
-def test_full_round(fast, slow, mult):
-    command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/Trader.py", "1",
-               "--parameters", f"{fast},{slow},{mult}"]
+def test_full_round(fast, slow):
+    command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/Trader.py", "2",
+               "--parameters", f"{fast},{slow}"]
 
     # Run the command
     result = subprocess.run(command, capture_output=True, text=True)
@@ -67,7 +67,6 @@ def test_full_round(fast, slow, mult):
     match = re.search(pattern, full_output)
     if match:
         log_path = match.group(0)
-        print("Log file path:", log_path, print(type(log_path)))
 
         # Extract total profit from the profit summary at the end (last occurrence)
         total_profit_pattern = r"Profit summary:.*?Total profit: ([\-\d,]+)"
@@ -75,12 +74,10 @@ def test_full_round(fast, slow, mult):
 
         if total_profit_match:
             total_profit = int(total_profit_match.group(1).replace(',', ''))
-            print(f"Total profit across all days: {total_profit}")
 
             # Rename the log file to include the parameters and the profit in a custom folder
-            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/backtests/max_tester_{fast}_{slow}_{mult}_pnl_{total_profit}.log"
-            print(custom_log_path)
-            log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Tutorial/Max/' + log_path
+            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/backtests/max_tester_{fast}_{slow}_pnl_{total_profit}.log"
+            log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/' + log_path
 
             os.rename(log_path, custom_log_path)
 
@@ -96,32 +93,20 @@ test_type = "single_day"  # Change to "single_day" or "full_round"
 day_to_test = -2  # Only used if test_type is "single_day"
 
 max_profit = 0
-max_profit_parameters = (0, 0, 0)
+max_profit_parameters = (0, 0)
 
 
-span_fast = [100, 150, 200]
-span_slow = [1000, 1500, 2500]
-multiple = [0.2, 0.6, 1]
 
-for i in (span_fast):
-    for j in (span_slow):
-        for k in (multiple):
-            total_profit = 0
-            if test_type == "single_day":
-                for day in [-2, -1, 0]:
-                    profit = test_single_day(i,j,k,day)
-                    print(profit)
-                    if profit < 0:
-                        total_profit += profit
-                    total_profit += profit
-                print(i,j,k,day,total_profit)
 
-            else:  # full_round
-                total_profit = test_full_round(i,j, k)
+multiple = np.linspace(0.875, 1.625, 5)
 
-            if total_profit > max_profit:
-                max_profit = total_profit
-                max_profit_parameters = (i,j, k)
+for i in tqdm(range(6)):
+    for j in multiple:
+        total_profit = test_full_round(i, j)
+        print(total_profit)
+        if total_profit > max_profit:
+            max_profit = total_profit
+            max_profit_parameters = (i,j)
 
 print(f"Max profit: {max_profit}")
 print(f"Max profit parameters: {max_profit_parameters}")

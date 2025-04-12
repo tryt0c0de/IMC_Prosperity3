@@ -135,7 +135,7 @@ class Trader:
     def __init__(self, params=None):
 
         self.products = ['KELP', 'SQUID_INK', 'CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2', 'RAINFOREST_RESIN']
-        self.products = ['PICNIC_BASKET1', 'JAMS']
+        #self.products = ['PICNIC_BASKET1', 'JAMS']
         self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['mid'] for prod in self.products]})
 
         self.max_holdings = {prod: 50 for prod in self.products}
@@ -143,8 +143,78 @@ class Trader:
 
         self.mid = {}
 
-        self.signal_df = pd.DataFrame({col:[] for col in ['timestamp', 'sig']})
         self.to_liquidate = {prod: False for prod in self.products}
+
+        span_fast = ['CROISSANTS', 'DJEMBES', 'KELP', 'SQUID_INK']
+
+        if not params:
+            self.asset1 = 'PICNIC_BASKET1'
+            self.asset2 = ['PICNIC_BASKET2', 'JAMS']
+            self.threshold = 1.4375
+
+        else:
+            #self.asset1 = span_fast[int(params[0])]
+            #self.asset2 = [span_slow[int(params[0])]]
+            self.asset1 = 'PICNIC_BASKET1'
+            self.asset2 = ['PICNIC_BASKET2', 'JAMS'] + [span_fast[int(params[0])]]
+            self.threshold = params[1]
+
+
+        self.limits = {'CROISSANTS': 250,
+                       'DJEMBES': 60,
+                       'JAMS': 350,
+                       'KELP': 50,
+                       'PICNIC_BASKET1': 60,
+                       'PICNIC_BASKET2': 100,
+                       'RAINFOREST_RESIN': 50,
+                       'SQUID_INK': 50}
+
+        self.regression = {
+            'PICNIC_BASKET1': {
+                'Intercept': 9247.413503566233,
+                'CROISSANTS': 8.425433348419688,
+                'DJEMBES': -0.5108856493110068,
+                'JAMS': 3.1028057117157886,
+                'std': 77.37545333537989
+        }}
+
+        self.regression = {
+            'PICNIC_BASKET1': {
+                'Intercept': 9247.413503566233,
+                'CROISSANTS': 8.425433348419688,
+                'DJEMBES': -0.5108856493110068,
+                'JAMS': 3.1028057117157886,
+                'std': 77.37545333537989
+            }}
+
+        self.regression = {
+            'PICNIC_BASKET1': {
+                'Intercept': 13249.25698105729,
+                'PICNIC_BASKET2': 0.9970625254932948,
+                'JAMS': 2.3484119937592993,
+                'std': 98.05545015362041
+            }}
+
+
+
+
+        '''pairs = pd.read_csv('/Users/maximesolere/Desktop/quad.csv')
+        self.regression = {}
+        for i,row in pairs.iterrows():
+            if row['x3'] == self.asset2[2]:
+                self.regression[row['y']] = {
+                    row['x1']: row['beta1'],
+                    row['x2']: row['beta2'],
+                    row['x3']: row['beta3'],
+                    'Intercept': row['intercept'],
+                    'std': row['std']
+                }'''
+
+        self.multiple = 0
+        for product in self.asset2:
+            mul = int(self.limits[product]//abs(self.regression[self.asset1][product]))
+            self.multiple = max(self.multiple, mul)
+
 
 
     def take_bids(self, best_bid, best_bid_amount, q, asset, liquidate=False):
@@ -204,21 +274,26 @@ class Trader:
         traderData = "SAMPLE"
         conversions = 1
 
+
         timestamp = state.timestamp
-        self.signal_df.loc[len(self.signal_df)] = [timestamp, 0]
         result = {}
+        result[self.asset1] = []
+        for product in self.asset2:
+            result[product] = []
+
+
 
 
         if True: #for product in self.products:
-            asset1 = 'PICNIC_BASKET1'
-            asset2 = 'JAMS'
-
-            self.current_holdings[asset1] = state.position.get(asset1, 0)
-            self.current_holdings[asset2] = state.position.get(asset2, 0)
 
 
-            order_depth_1: OrderDepth = state.order_depths[asset1]
-            order_depth_2: OrderDepth = state.order_depths[asset2]
+            self.current_holdings[self.asset1] = state.position.get(self.asset1, 0)
+            for x in self.asset2:
+                self.current_holdings[x] = state.position.get(x, 0)
+
+
+            order_depth_1: OrderDepth = state.order_depths[self.asset1]
+            order_depth_2= {x: state.order_depths[x] for x in self.asset2}
 
             orders1: List[Order] = []
             orders2: List[Order] = []
@@ -229,23 +304,18 @@ class Trader:
             best_bid1, best_bid_amount1 = zip(*list(order_depth_1.buy_orders.items())) if order_depth_1.buy_orders else (
             [], [])
 
-            best_ask2, best_ask_amount2 = zip(
-                *list(order_depth_2.sell_orders.items())) if order_depth_2.sell_orders else (
-                [], [])
-            best_bid2, best_bid_amount2 = zip(
-                *list(order_depth_2.buy_orders.items())) if order_depth_2.buy_orders else (
-                [], [])
+            best_ask2, best_ask_amount2 = {},{}
+            best_bid2, best_bid_amount2 = {},{}
+            for x in self.asset2:
+                best_ask2[x], best_ask_amount2[x] = zip(
+                    *list(order_depth_2[x].sell_orders.items())) if order_depth_2[x].sell_orders else (
+                    [], [])
+                best_bid2[x], best_bid_amount2[x] = zip(
+                    *list(order_depth_2[x].buy_orders.items())) if order_depth_2[x].buy_orders else (
+                    [], [])
 
-            best_ask1 = list(best_ask1)
-            best_ask_amount1 = list(best_ask_amount1)
-            best_bid1 = list(best_bid1)
-            best_bid_amount1 = list(best_bid_amount1)
-
-            best_ask2= list(best_ask2)
-            best_ask_amount2 = list(best_ask_amount2)
-            best_bid2 = list(best_bid2)
-            best_bid_amount2 = list(best_bid_amount2)
-
+                best_ask2[x], best_ask_amount2[x] = list(best_ask2[x]), list(best_ask_amount2[x])
+                best_bid2[x], best_bid_amount2[x] = list(best_bid2[x]), list(best_bid_amount2[x])
 
 
             if not (best_ask_amount1 + best_bid_amount1):
@@ -260,106 +330,118 @@ class Trader:
                     return result, conversions, traderData
 
 
-            self.mid[asset1] = (best_bid1[0] + best_ask1[0]) / 2
-            self.mid[asset2] = (best_bid2[0] + best_ask2[0]) / 2
+            self.mid[self.asset1] = (best_bid1[0] + best_ask1[0]) / 2
+            for x in self.asset2:
+                self.mid[x] = (best_bid2[x][0] + best_ask2[x][0]) / 2
 
 
-            b1 = 5.156039
-            ratio = 5
 
-            mean = 25087.379096616663
-            std = 89.71798351096007
-
-            multiples = list(range(1, 1+int(50//b1)))[::-1]
+            multiples = list(range(1, 1+self.multiple))[::-1]
 
 
-            if True: #timestamp >= (look + self.span_slow) * 100:
+            if True:
 
 
-                curr_long = (self.current_holdings[asset1] > 0)
-                curr_short = (self.current_holdings[asset1] < 0)
+                curr_long = (self.current_holdings[self.asset1] > 0)
+                curr_short = (self.current_holdings[self.asset1] < 0)
 
 
 
 
 
-                #prices1 = pd.Series(self.df[asset1].tolist() + [self.mid[asset1]])
-                #prices2 = pd.Series(self.df[asset2].tolist() + [self.mid[asset2]])
+                #prices1 = pd.Series(self.df[self.asset1].tolist() + [self.mid[self.asset1]])
+                #prices2 = pd.Series(self.df[self.asset2].tolist() + [self.mid[self.asset2]])
 
 
 
-                spread = (self.mid[asset1] - b1 * self.mid[asset2] - mean)/std
-                '''with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                    file.write(f"{spread}\n")'''
+                spread = self.mid[self.asset1] - self.regression[self.asset1]['Intercept']
+                for product in self.asset2:
+                    spread -= self.regression[self.asset1][product] * self.mid[product]
+                spread /= self.regression[self.asset1]['std']
+
+                with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                    file.write(f"{timestamp} {spread}\n")
 
                 q = 0
                 neutral = False
-                threshold = 1
 
                 if not (curr_short or curr_long):
-                    self.to_liquidate[asset1] = False
-                    self.to_liquidate[asset2] = False
+                    self.to_liquidate[self.asset1] = False
+                    for x in self.asset2:
+                        self.to_liquidate[x] = False
 
-                if (curr_long and spread > 0) or (curr_short and spread < 0) or self.to_liquidate[asset1] or self.to_liquidate[asset2]:
+                if (curr_long and spread > 0) or (curr_short and spread < 0) or self.to_liquidate[self.asset1] or True in [self.to_liquidate[x] for x in self.asset2]:
                     neutral = True
-                    with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                        file.write(f"{timestamp} {spread} Neutral\n")
 
-                elif spread > threshold and not curr_short:
+                elif spread > self.threshold and not curr_short:
                     q = 1
-                elif spread < -threshold and not curr_long:
+                elif spread < -self.threshold and not curr_long:
                     q = -1
 
 
 
-
                 if q > 0 :
-
                     for mul in multiples:
-                        desired_quant = round(b1*mul*3)
-                        bid = self.take_bids(best_bid1, best_bid_amount1, mul*3, asset1)
-                        ask = self.take_asks(best_ask2, best_ask_amount2, desired_quant, asset2)
-                        if bid and ask:
-                            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                                file.write(f"{timestamp}SELL{mul}, {desired_quant}\n")
-                            orders2.extend(ask)
-                            orders1.extend(bid)
-                            break
+                        bid = self.take_bids(best_bid1, best_bid_amount1, mul, self.asset1)
+                        if not bid:
+                            continue
+                        asks = {}
+                        for product in self.asset2:
+                            desired_quant = round(self.regression[self.asset1][product]*mul)
+                            ask = self.take_asks(best_ask2[product], best_ask_amount2[product], desired_quant, product)
+                            if not (ask and desired_quant):
+                                asks = {}
+                                break
+                            asks[product] = ask
+                        if not asks:
+                            continue
 
-                if q < 0:  # and abs(best_bid_amount2[0]) >= 24:
+                        result[self.asset1] = bid
+                        for product in self.asset2:
+                            result[product] = asks[product]
+                        break
 
+                if q < 0:
                     for mul in multiples:
-                        desired_quant = round(b1*mul*3)
-                        bid = self.take_bids(best_bid2, best_bid_amount2, desired_quant, asset2)
-                        ask = self.take_asks(best_ask1, best_ask_amount1, mul*3, asset1)
-                        if bid and ask:
-                            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
-                                file.write(f"{timestamp}BUY{mul}, {desired_quant}\n")
-                            orders2.extend(bid)
-                            orders1.extend(ask)
-                            break
+                        ask = self.take_asks(best_ask1, best_ask_amount1, mul, self.asset1)
+                        if not ask:
+                            continue
+                        bids = {}
+                        for product in self.asset2:
+                            desired_quant = round(self.regression[self.asset1][product] * mul)
+                            bid = self.take_asks(best_bid2[product], best_bid_amount2[product], desired_quant, product)
+                            if not (bid and desired_quant):
+                                bids = {}
+                                break
+                            bids[product] = bid
+                        if not bids:
+                            continue
+
+                        result[self.asset1] = ask
+                        for product in self.asset2:
+                            result[product] = bids[product]
+                        break
+
 
                 if neutral:
-                    self.to_liquidate[asset1] = True
-                    self.to_liquidate[asset2] = True
-                    orders1.extend(self.liquidate(best_bid1, best_bid_amount1, best_ask1, best_ask_amount1, asset1))
-                    orders2.extend(self.liquidate(best_bid2, best_bid_amount2, best_ask2, best_ask_amount2, asset2))
+                    self.to_liquidate[self.asset1] = True
+                    for x in self.asset2:
+                        self.to_liquidate[x] = True
 
-            result[asset2] = orders2
-            result[asset1] = orders1
+                    result[self.asset1] = self.liquidate(best_bid1, best_bid_amount1, best_ask1, best_ask_amount1, self.asset1)
+                    for product in self.asset2:
+                        result[product] = self.liquidate(best_bid2[product], best_bid_amount2[product], best_ask2[product], best_ask_amount2[product], product)
+
 
         # Update dataframe with new weighted prices
-        self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.mid] for prod in self.products]
+        #self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.mid] for prod in self.products]
 
 
         if timestamp==999900:
             self.df.to_csv('/Users/maximesolere/desktop/df.csv')
             #with open('/Users/maximesolere/desktop/log.txt', "a") as file:
                 #file.write(f"{self.df['mid_KELP'].max()}")
-            self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
             #return 1
-
-
 
         logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData

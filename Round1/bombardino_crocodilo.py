@@ -6,8 +6,8 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-#from Logger import Logger
-#logger = Logger()
+from Logger import Logger
+logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -471,6 +471,6 @@ class Trader:
 
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
-        #logger.flush(state,result,conversions,traderData)
+        logger.flush(state,result,conversions,traderData)
 
         return result, conversions, traderData

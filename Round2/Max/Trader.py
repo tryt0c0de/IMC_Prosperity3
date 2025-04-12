@@ -4,7 +4,6 @@ import sys
 import math
 from numpy.ma.core import product
 
-from Round2.Max.max_tester_max import multiple
 from datamodel import OrderDepth, UserId, TradingState, Order, Symbol, Listing, Trade, Observation, ProsperityEncoder
 from typing import List
 import string
@@ -145,6 +144,58 @@ class Trader:
         self.mid = {}
 
         self.signal_df = pd.DataFrame({col:[] for col in ['timestamp', 'sig']})
+        self.to_liquidate = {prod: False for prod in self.products}
+
+
+    def take_bids(self, best_bid, best_bid_amount, q, asset, liquidate=False):
+        orders = []
+        n = len(best_bid)
+        q0 = min(q, best_bid_amount[0])
+        q1,q2 = 0,0
+
+        if q0 < q and n > 1:
+            q1 = min(q - q0, best_bid_amount[1])
+
+            if q0 + q1 < q and n > 2:
+                q2 = min(q - q0 - q1, best_bid_amount[2])
+
+        if liquidate or q0 + q1 + q2 == q:
+            orders.append(Order(asset, best_bid[0], -q0))
+            if q1:
+                orders.append(Order(asset, best_bid[1], -q1))
+            if q2:
+                orders.append(Order(asset, best_bid[2], -q2))
+
+        return orders
+
+    def take_asks(self, best_ask, best_ask_amount, q, asset, liquidate=False):
+        orders = []
+        n = len(best_ask)
+        q0 = max(-q, best_ask_amount[0])
+        q1, q2 = 0, 0
+
+        if q0 > -q and n > 1:
+            q1 = max(-q - q0, best_ask_amount[1])
+
+            if q0 + q1 > -q and n > 2:
+                q2 = max(-q - q0 - q1, best_ask_amount[2])
+
+        if liquidate or q0 + q1 + q2 == -q:
+            orders.append(Order(asset, best_ask[0], -q0))
+            if q1:
+                orders.append(Order(asset, best_ask[1], -q1))
+            if q2:
+                orders.append(Order(asset, best_ask[2], -q2))
+
+        return orders
+
+    def liquidate(self, best_bid, best_bid_amount, best_ask, best_ask_amount, asset):
+        q = self.current_holdings[asset]
+        if q<0:
+            return self.take_asks(best_ask, best_ask_amount, abs(q), asset, liquidate=True)
+        elif q>0:
+            return self.take_bids(best_bid, best_bid_amount, abs(q), asset, liquidate=True)
+        return []
 
 
 
@@ -219,7 +270,7 @@ class Trader:
             mean = 25087.379096616663
             std = 89.71798351096007
 
-            multiples = list(range(1, 50//5+1))[::-1]
+            multiples = list(range(1, 1+int(50//b1)))[::-1]
 
 
             if True: #timestamp >= (look + self.span_slow) * 100:
@@ -245,72 +296,54 @@ class Trader:
                 neutral = False
                 threshold = 1
 
-                if (curr_long and spread > 0) or (curr_short and spread < 0):
+                if not (curr_short or curr_long):
+                    self.to_liquidate[asset1] = False
+                    self.to_liquidate[asset2] = False
+
+                if (curr_long and spread > 0) or (curr_short and spread < 0) or self.to_liquidate[asset1] or self.to_liquidate[asset2]:
                     neutral = True
+                    with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                        file.write(f"{timestamp} {spread} Neutral\n")
 
                 elif spread > threshold and not curr_short:
-                    q = -1
-                elif spread < -threshold and not curr_long:
                     q = 1
+                elif spread < -threshold and not curr_long:
+                    q = -1
 
 
 
-
-
-                q1,q2 = 0,0
 
                 if q > 0 :
-                    n = len(best_bid2)
 
                     for mul in multiples:
-                        desired_quant = ratio*mul
-                        q0 = min(desired_quant, best_bid_amount2[0])
-
-                        if q0 < desired_quant and n>1:
-                            q1 = min(desired_quant-q0, best_bid_amount2[1])
-
-                            if q0+q1 < ratio and n>2:
-                                q2 = min(desired_quant-q0-q1, best_bid_amount2[2])
-
-                        if q0+q1+q2 == desired_quant:
-                            orders1.append(Order(asset1, best_ask1[0], mul))
-                            orders2.append(Order(asset2, best_bid2[0], -q0))
-                            if q1:
-                                orders2.append(Order(asset2, best_bid2[1], -q1))
-                            if q2:
-                                orders2.append(Order(asset2, best_bid2[2], -q2))
+                        desired_quant = round(b1*mul*3)
+                        bid = self.take_bids(best_bid1, best_bid_amount1, mul*3, asset1)
+                        ask = self.take_asks(best_ask2, best_ask_amount2, desired_quant, asset2)
+                        if bid and ask:
+                            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                                file.write(f"{timestamp}SELL{mul}, {desired_quant}\n")
+                            orders2.extend(ask)
+                            orders1.extend(bid)
                             break
 
                 if q < 0:  # and abs(best_bid_amount2[0]) >= 24:
-                    n = len(best_ask2)
 
                     for mul in multiples:
-                        desired_quant = ratio*mul
-                        q0 = max(-desired_quant, best_ask_amount2[0])
-
-                        if q0 > -desired_quant and n>1:
-                            q1 = max(-desired_quant - q0, best_ask_amount2[1])
-
-                            if q0 + q1 > -desired_quant and n>2:
-                                q2 = max(-desired_quant - q0 - q1, best_ask_amount2[2])
-
-                        if q0+q1+q2 == -desired_quant:
-                            orders1.append(Order(asset1, best_bid1[0], -desired_quant))
-                            orders2.append(Order(asset2, best_ask2[0], -q0))
-                            if q1:
-                                orders2.append(Order(asset2, best_ask2[1], -q1))
-                            if q2:
-                                orders2.append(Order(asset2, best_ask2[2], -q2))
+                        desired_quant = round(b1*mul*3)
+                        bid = self.take_bids(best_bid2, best_bid_amount2, desired_quant, asset2)
+                        ask = self.take_asks(best_ask1, best_ask_amount1, mul*3, asset1)
+                        if bid and ask:
+                            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                                file.write(f"{timestamp}BUY{mul}, {desired_quant}\n")
+                            orders2.extend(bid)
+                            orders1.extend(ask)
                             break
 
                 if neutral:
-                    if curr_long:
-                        orders1.append(Order(asset1, best_bid1[0], -self.current_holdings[asset1]))
-                        orders2.append(Order(asset2, best_ask2[0], -self.current_holdings[asset2]))
-                    if curr_short:
-                        orders1.append(Order(asset1, best_ask1[0], -self.current_holdings[asset1]))
-                        orders2.append(Order(asset2, best_bid2[0], -self.current_holdings[asset2]))
-
+                    self.to_liquidate[asset1] = True
+                    self.to_liquidate[asset2] = True
+                    orders1.extend(self.liquidate(best_bid1, best_bid_amount1, best_ask1, best_ask_amount1, asset1))
+                    orders2.extend(self.liquidate(best_bid2, best_bid_amount2, best_ask2, best_ask_amount2, asset2))
 
             result[asset2] = orders2
             result[asset1] = orders1

@@ -132,6 +132,9 @@ logger = Logger()
 
 
 class Trader:
+
+
+
     def __init__(self, params=None):
 
         self.products = ['KELP', 'SQUID_INK', 'CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2', 'RAINFOREST_RESIN']
@@ -145,19 +148,22 @@ class Trader:
 
         self.to_liquidate = {prod: False for prod in self.products}
 
-        span_fast = ['CROISSANTS', 'DJEMBES', 'KELP', 'SQUID_INK']
+        span_fast = ['DJEMBES', 'JAMS', 'JAMS']
+        span_slow = ['CROISSANTS', 'CROISSANTS', 'DJEMBES']
 
         if not params:
-            self.asset1 = 'PICNIC_BASKET1'
-            self.asset2 = ['PICNIC_BASKET2', 'JAMS']
+            self.asset1 = 'DJEMBES'
+            self.asset2 = ['CROISSANTS', 'JAMS']
             self.threshold = 1.4375
+            self.prop = 0
 
         else:
             #self.asset1 = span_fast[int(params[0])]
             #self.asset2 = [span_slow[int(params[0])]]
-            self.asset1 = 'PICNIC_BASKET1'
-            self.asset2 = ['PICNIC_BASKET2', 'JAMS'] + [span_fast[int(params[0])]]
+            self.asset1 = span_fast[int(params[0])]
+            self.asset2 = [span_slow[int(params[0])]]
             self.threshold = params[1]
+            self.prop = params[2]
 
 
         self.limits = {'CROISSANTS': 250,
@@ -195,20 +201,26 @@ class Trader:
                 'std': 98.05545015362041
             }}
 
+        self.regression = {
+                'DJEMBES': {
+                'Intercept': 7659.088066393866,
+                'CROISSANTS': 0.9543371164975056,
+                'JAMS': 0.2541291462546411,
+                'std': 22.194071205844857
+            }}
 
 
 
-        '''pairs = pd.read_csv('/Users/maximesolere/Desktop/quad.csv')
+
+        pairs = pd.read_csv('/Users/maximesolere/Desktop/pairs.csv')
         self.regression = {}
         for i,row in pairs.iterrows():
-            if row['x3'] == self.asset2[2]:
+            if row['x'] == self.asset2[0]:
                 self.regression[row['y']] = {
-                    row['x1']: row['beta1'],
-                    row['x2']: row['beta2'],
-                    row['x3']: row['beta3'],
+                    row['x']: row['beta'],
                     'Intercept': row['intercept'],
                     'std': row['std']
-                }'''
+                }
 
         self.multiple = 0
         for product in self.asset2:
@@ -370,7 +382,7 @@ class Trader:
                     for x in self.asset2:
                         self.to_liquidate[x] = False
 
-                if (curr_long and spread > 0) or (curr_short and spread < 0) or self.to_liquidate[self.asset1] or True in [self.to_liquidate[x] for x in self.asset2]:
+                if (curr_long and spread > self.threshold*self.prop) or (curr_short and spread < -self.threshold*self.prop) or self.to_liquidate[self.asset1] or True in [self.to_liquidate[x] for x in self.asset2]:
                     neutral = True
 
                 elif spread > self.threshold and not curr_short:

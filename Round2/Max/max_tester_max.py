@@ -52,9 +52,9 @@ def test_single_day(fast, slow, mult, day_number):
     return 0
 
 
-def test_full_round(fast, slow):
+def test_full_round(fast, slow, k):
     command = ["prosperity3bt", r"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/Trader.py", "2",
-               "--parameters", f"{fast},{slow}"]
+               "--parameters", f"{fast},{slow},{k}"]
 
     # Run the command
     result = subprocess.run(command, capture_output=True, text=True)
@@ -76,7 +76,7 @@ def test_full_round(fast, slow):
             total_profit = int(total_profit_match.group(1).replace(',', ''))
 
             # Rename the log file to include the parameters and the profit in a custom folder
-            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/backtests/max_tester_{fast}_{slow}_pnl_{total_profit}.log"
+            custom_log_path = f"/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/backtests/max_tester_{fast}_{slow}_{k}_pnl_{total_profit}.log"
             log_path = '/Users/maximesolere/Library/Mobile Documents/com~apple~CloudDocs/Maxime/RIBOT/Git/Round2/Max/' + log_path
 
             os.rename(log_path, custom_log_path)
@@ -98,15 +98,17 @@ max_profit_parameters = (0, 0)
 
 
 
-multiple = np.linspace(0.875, 1.625, 5)
+multiple = np.linspace(0.75, 2, 6)
+prop = np.linspace(0, 1, 5)
 
-for i in tqdm(range(6)):
+for i in tqdm(range(3)):
     for j in multiple:
-        total_profit = test_full_round(i, j)
-        print(total_profit)
-        if total_profit > max_profit:
-            max_profit = total_profit
-            max_profit_parameters = (i,j)
+        for k in prop:
+            total_profit = test_full_round(i, j,k)
+            print(total_profit)
+            if total_profit > max_profit:
+                max_profit = total_profit
+                max_profit_parameters = (i,j,k)
 
 print(f"Max profit: {max_profit}")
 print(f"Max profit parameters: {max_profit_parameters}")

@@ -2,9 +2,8 @@
 
 def __init__(self):
 
-        self.products = ['KELP', 'SQUID_INK', 'CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2', 'RAINFOREST_RESIN']
+        self.products = ['CROISSANTS', 'DJEMBES']
 
-        self.max_holdings = {prod: 50 for prod in self.products}
         self.mid = {}
         self.to_liquidate = {prod: False for prod in self.products}
 

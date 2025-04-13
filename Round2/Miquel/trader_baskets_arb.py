@@ -18,8 +18,8 @@ class Product:
 
 class Trader:
     def __init__(self):
-        self.arb_threshold = 50  # Arbitrage threshold
-        self.arb_threshold2 = 50  # Arbitrage threshold for second basket
+        self.arb_threshold = 100  # Arbitrage threshold
+        self.arb_threshold2 = 20  # Arbitrage threshold for second basket
         self.LIMIT = {
             Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50,
             Product.PICNIC_BASKET1: 60, Product.PICNIC_BASKET2: 100,
@@ -54,16 +54,21 @@ class Trader:
         mid_d = (max(dd.buy_orders.keys()) + min(dd.sell_orders.keys())) / 2
         
         # Calculate the synthetic basket price.
-        synthetic_price = 6 * mid_c + 3 * mid_j + 1 * mid_d
-        synthetic_price2 = 4 * mid_c + 2 * mid_j 
+        coefficients_regression_basket1 = [8.49318614, 2.66122078, 0.37259003]
+        coeffcients_regression_basket2 = [ 4.1366589,   2.2213497,  -0.14996876]
+        regression_price = coefficients_regression_basket1[0] * mid_c + coefficients_regression_basket1[1] * mid_j + coefficients_regression_basket1[2] * mid_d
+        regression_price2 = coeffcients_regression_basket2[0] * mid_c + coeffcients_regression_basket2[1] * mid_j + coeffcients_regression_basket2[2] * mid_d
+
+        # synthetic_price = 6 * mid_c + 3 * mid_j + 1 * mid_d
+        # synthetic_price2 = 4 * mid_c + 2 * mid_j 
         
         # Compute the mid-price for the real basket (PICNIC_BASKET1).
         mid_basket = (max(pb_depth.buy_orders.keys()) + min(pb_depth.sell_orders.keys())) / 2
         mid_basket2 = (max(pb2_depth.buy_orders.keys()) + min(pb2_depth.sell_orders.keys())) / 2
         
         # Compute the arbitrage spread.
-        spread = mid_basket - synthetic_price
-        spread2 = mid_basket2 - synthetic_price2
+        spread = mid_basket - regression_price
+        spread2 = mid_basket2 - regression_price2 
         
         # If spread is significantly positive, the real basket is trading at a premium.
         if spread > self.arb_threshold:
@@ -74,9 +79,9 @@ class Trader:
             buy_c_price = min(cd.sell_orders.keys())
             buy_j_price = min(jd.sell_orders.keys())
             buy_d_price = min(dd.sell_orders.keys())
-            # orders.append(Order("CROISSANTS", buy_c_price, 6))
-            # orders.append(Order("JAMS", buy_j_price, 3))
-            # orders.append(Order("DJEMBES", buy_d_price, 1))
+            orders.append(Order("CROISSANTS", buy_c_price, round(coefficients_regression_basket1[0])))
+            orders.append(Order("JAMS", buy_j_price, round(coefficients_regression_basket1[1])))
+            orders.append(Order("DJEMBES", buy_d_price, round(coefficients_regression_basket1[2])))
         
         # If spread is significantly negative, the real basket is trading at a discount.
         elif spread < -self.arb_threshold:
@@ -88,25 +93,25 @@ class Trader:
             sell_c_price = max(cd.buy_orders.keys())
             sell_j_price = max(jd.buy_orders.keys())
             sell_d_price = max(dd.buy_orders.keys())
-            # orders.append(Order("CROISSANTS", sell_c_price, -6))
-            # orders.append(Order("JAMS", sell_j_price, -3))
-            # orders.append(Order("DJEMBES", sell_d_price, -1))
+            orders.append(Order("CROISSANTS", sell_c_price, -round(coefficients_regression_basket1[0])))
+            orders.append(Order("JAMS", sell_j_price, -round(coefficients_regression_basket1[1])))
+            orders.append(Order("DJEMBES", sell_d_price, -round(coefficients_regression_basket1[2])))
         if spread2>self.arb_threshold2:
             real_sell_price = max(pb2_depth.buy_orders.keys())
             orders.append(Order("PICNIC_BASKET2", real_sell_price, -1))
             
             buy_c_price = min(cd.sell_orders.keys())
             buy_j_price = min(jd.sell_orders.keys())
-            # orders.append(Order("CROISSANTS", buy_c_price, 4))
-            # orders.append(Order("JAMS", buy_j_price, 2))
+            orders.append(Order("CROISSANTS", buy_c_price, round(coeffcients_regression_basket2[0])))
+            orders.append(Order("JAMS", buy_j_price, round(coeffcients_regression_basket2[1])))
         elif spread2<-self.arb_threshold2:
             real_buy_price = min(pb2_depth.sell_orders.keys())
             orders.append(Order("PICNIC_BASKET2", real_buy_price, 1))
             
             sell_c_price = max(cd.buy_orders.keys())
             sell_j_price = max(jd.buy_orders.keys())
-            # orders.append(Order("CROISSANTS", sell_c_price, -4))
-            # orders.append(Order("JAMS", sell_j_price, -2))
+            orders.append(Order("CROISSANTS", sell_c_price, -round(coeffcients_regression_basket2[0])))
+            orders.append(Order("JAMS", sell_j_price, -round(coeffcients_regression_basket2[1])))
         
         
         return orders

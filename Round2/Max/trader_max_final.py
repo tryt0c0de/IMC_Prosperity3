@@ -18,9 +18,9 @@ def __init__(self):
 
         self.regression = {
                 'DJEMBES': {
-                'Intercept': 7659.088066393866,
-                'CROISSANTS': 0.9543371164975056,
-                'std': 22.194071205844857
+                'Intercept': 6913.009686452366,
+                'CROISSANTS': 1.5177902648379593,
+                'std': 23.282224239738
             }}
 
 

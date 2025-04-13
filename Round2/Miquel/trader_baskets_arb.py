@@ -4,30 +4,28 @@ import jsonpickle
 from Logger import Logger
 logger = Logger()
 
+
+class Product:
+    RAINFOREST_RESIN = "RAINFOREST_RESIN"
+    KELP = "KELP"
+    SQUID_INK = "SQUID_INK"
+    PICNIC_BASKET1 = "PICNIC_BASKET1"
+    PICNIC_BASKET2 = "PICNIC_BASKET2"
+    CROISSANTS = "CROISSANTS"
+    JAMS = "JAMS"
+    DJEMBES = "DJEMBES"
+
+
 class Trader:
     def __init__(self):
         self.arb_threshold = 50  # Arbitrage threshold
         self.arb_threshold2 = 50  # Arbitrage threshold for second basket
+        self.LIMIT = {
+            Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50,
+            Product.PICNIC_BASKET1: 60, Product.PICNIC_BASKET2: 100,
+            Product.CROISSANTS: 250, Product.JAMS: 350, Product.DJEMBES: 60 
+        }
     def synthetic_real_arb(self, state: TradingState) -> List[Order]:
-        """
-        Arbitrage between the synthetic basket and the real basket.
-        
-        Synthetic Basket is constructed as:
-            6 CROISSANTS + 3 JAMS + 1 DJEMBES
-            
-        Real Basket is represented by:
-            PICNIC_BASKET1
-        
-        Compute the mid-price for the synthetic basket from the underlying instruments and
-        compare it to the mid-price for PICNIC_BASKET1.
-        
-        If:
-          spread = (real basket mid-price) - (synthetic basket price)
-          
-        is greater than a positive threshold, then the real basket is overpriced – so short the real basket
-        and long the synthetic replication (i.e. buy underlying instruments). If the spread is below negative the threshold,
-        take the opposite side.
-        """
         orders: List[Order] = []
         
         # Required instruments: Underlying components and the real basket.
@@ -114,10 +112,6 @@ class Trader:
         return orders
 
     def run(self, state: TradingState):
-        """
-        The main run method for the Trader.
-        This method applies the synthetic vs. real basket arbitrage logic and returns the orders.
-        """
         arb_orders = self.synthetic_real_arb(state)
         result = {}
         for order in arb_orders:

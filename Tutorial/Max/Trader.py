@@ -1,6 +1,6 @@
 import pandas as pd
 import sys
-
+import math
 from numpy.ma.core import product
 
 from datamodel import OrderDepth, UserId, TradingState, Order, Symbol, Listing, Trade, Observation, ProsperityEncoder
@@ -10,6 +10,7 @@ import string
 from typing import List
 import string
 import json
+import matplotlib.pyplot as plt
 from typing import Any
 class Logger:
     def __init__(self) -> None:
@@ -130,71 +131,186 @@ logger = Logger()
 
 
 class Trader:
-    def __init__(self, ub):
-        self.df_kelp = pd.DataFrame({col: [] for col in ['timestamp', 'w_price_KELP', 'w_price_SQUID_INK']})
-        self.span = 30
-        self.ub = 1/(ub[0])
-        self.lb = -self.ub
-        self.max_holdings = {"SQUID_INK": 50, "KELP": 50}
-        self.current_holdings = {product: 0 for product in self.max_holdings}
-        self.max_order_size = 10
+    def __init__(self, params=None):
+        self.day = 1
+        if not params:
+            params = [100, 1000, 1]
+        self.products = ['KELP', 'SQUID_INK', 'CROISSANTS', 'DJEMBES', 'JAMS', 'PICNIC_BASKET1', 'PICNIC_BASKET2', 'RAINFOREST_RESIN']
+        #self.products = ['KELP']
+        self.df = pd.DataFrame({col: [] for col in ['timestamp'] + [f'{c}_{prod}' for c in ['std', 'ewm_fast', 'ewm_slow', 'w_price', 'ub', 'spread'] for prod in self.products]})
+        self.span_fast = int(params[0])
+        self.span_slow = int(params[1])
+        self.coef1 = 1+ (0.005 * params[2])
+        self.coef2 = 1 + (0.01 * params[2])
+        self.coef3 = 1 + (0.025 * params[2])
+        self.max_holdings = {prod: 50 for prod in self.products}
+        self.current_holdings = {prod: 0 for prod in self.products}
+        #self.max_order_size = 10
         self.w_price = {}
+        self.ewm_fast = {}
+        self.ewm_slow = {}
+        self.ub = {}
+        self.spread = {}
+        self.holding_ratio = {}
+        self.std = {}
+
+        self.touch_price = 0
+
+        self.signal_df = pd.DataFrame({col:[] for col in ['timestamp', 'sig']})
+
+
+
+    def plot_ewm(self, product):
+        plt.plot(self.df[f'w_price_{product}'].iloc[200:])
+        plt.plot(self.df[f'ewm_{product}'].iloc[200:], ls='--')
+        plt.show()
+
 
     def run(self, state: TradingState):
+
+        traderData = "SAMPLE"
+        conversions = 1
+
         timestamp = state.timestamp
+        self.signal_df.loc[len(self.signal_df)] = [timestamp, 0]
         result = {}
 
-        for product in ['KELP', 'SQUID_INK']:
+
+        for product in self.products:
             self.current_holdings[product] = state.position.get(product, 0)
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
 
             # Get best bid and ask
-            best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0] if order_depth.sell_orders else (0, 0)
-            best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0] if order_depth.buy_orders else (0, 0)
+            best_ask, best_ask_amount = zip(*list(order_depth.sell_orders.items())) if order_depth.sell_orders else ([], [])
+            best_bid, best_bid_amount = zip(*list(order_depth.buy_orders.items())) if order_depth.buy_orders else ([], [])
 
-            if best_ask_amount + best_bid_amount == 0:
-                self.w_price[product] = self.df_kelp[f'w_price_{product}'].iloc[-1] if not self.df_kelp.empty else None
-                continue
+            best_ask = list(best_ask)
+            best_ask_amount = list(best_ask_amount)
+            best_bid = list(best_bid)
+            best_bid_amount = list(best_bid_amount)
 
-            self.w_price[product] = (best_bid + best_ask) / 2
 
-            if timestamp >= self.span * 1000:
-                recent_prices = self.df_kelp[f'w_price_{product}'].iloc[-self.span + 1:].tolist() + [self.w_price[product]]
-                ewm = pd.Series(recent_prices).ewm(span=self.span, adjust=False).mean().iloc[-1]
-                spread = (self.w_price[product] - ewm) / ewm
 
-                holding_ratio = self.current_holdings[product] / self.max_holdings[product]
-                ub = self.ub - holding_ratio * self.ub
-                lb = self.lb - holding_ratio * self.lb
+            if not (best_ask_amount + best_bid_amount):
+                if not self.df.empty:
+                    for prod in self.products:
+                        self.std[prod] = self.df[f'std_{prod}'].iloc[-1]
+                        self.ewm_fast[prod] = self.df[f'ewm_fast_{prod}'].iloc[-1]
+                        self.ewm_slow[prod] = self.df[f'ewm_slow_{prod}'].iloc[-1]
+                        self.w_price[prod] = self.df[f'w_price_{prod}'].iloc[-1]
+                        self.ub[prod] = self.df[f'ub_{prod}'].iloc[-1]
+                        self.spread[prod] = self.df[f'spread_{prod}'].iloc[-1]
+                    timestamp = self.df['timestamp'].iloc[-1] + 100
+                else:
+                    logger.flush(state, result, conversions, traderData)
+                    return result, conversions, traderData
+                break
 
-                logger.print(f"{product} spread: {spread}, UB: {ub}, LB: {lb}")
+            self.w_price[product] = (best_bid[0] + best_ask[0]) / 2
 
-                if spread < lb:
-                    buy_limit = self.max_holdings[product] - self.current_holdings[product]
-                    desired_qty = max(1, int((1 - holding_ratio) * self.max_order_size))
-                    q = min(self.max_order_size + min(0, self.current_holdings[product]),
-                            desired_qty + min(0, self.current_holdings[product]),
-                            buy_limit)
-                    self.current_holdings[product] += q
-                    orders.append(Order(product, best_ask, q))
 
-                elif spread > ub:
-                    sell_limit = self.max_holdings[product] + self.current_holdings[product]
-                    desired_qty = max(1, int((1 + holding_ratio) * self.max_order_size))
-                    q = min(self.max_order_size + max(0, self.current_holdings[product]),
-                            desired_qty + max(0, self.current_holdings[product]),
-                            sell_limit)
-                    self.current_holdings[product] -= q
-                    orders.append(Order(product, best_bid, -q))
+            self.std[product], self.ewm_fast[product], self.ewm_slow[product], self.ub[product], self.spread[product] = 0,0,0,0,0
+
+            continue
+            look = 500
+            if timestamp >= (look + self.span_slow) * 100:
+                # ADJUST ?????
+                def moving(span):
+                    return pd.Series(self.df[f'w_price_{product}'].tolist() + [self.w_price[product]]).ewm(span=span, adjust=False)
+
+                self.ewm_fast[product] = moving(self.span_fast).mean().iloc[-1]
+                self.ewm_slow[product] = moving(self.span_slow).mean().iloc[-1]
+
+                curr_long = (self.current_holdings[product] > 0)
+                curr_short = (self.current_holdings[product] < 0)
+
+                q = 0
+                neutral = True
+                self.spread[product] = self.ewm_slow[product]/self.ewm_fast[product]
+
+                bound = 0#.005
+
+                if self.spread[product] > 1+bound:
+                    if curr_long:
+                        q = -1
+                    elif (not curr_short) and self.df[f'spread_{product}'].iloc[-look:].min() < 1-bound/2:# and self.spread[product] > 1+bound:
+                        q = -1
+                        neutral = False
+
+
+
+                if self.spread[product] < 1-bound:
+                    if curr_short:
+                        q = 1
+                    elif (not curr_long) and self.df[f'spread_{product}'].iloc[-look:].max() > 1+bound/2:# and self.spread[product] < 1-bound:
+                        q = 1
+                        neutral = False
+
+
+                q *= self.max_holdings[product]
+
+                '''if ratio > self.coef1:
+                    if curr_long:
+                        q = -self.current_holdings[product]
+                    if ratio > self.coef2:
+                        neutral = False
+                        q -= self.max_holdings[product]
+                    if ratio > self.coef3:
+                        q = self.max_holdings[product] - self.current_holdings[product]
+
+                elif ratio < 2-self.coef1:
+                    if curr_short:
+                        q = -self.current_holdings[product]
+                    if ratio < 2-self.coef2:
+                        neutral = False
+                        q -= -self.max_holdings[product]
+                    if ratio < 2-self.coef3:
+                        q = -self.max_holdings[product] + self.current_holdings[product]'''
+
+
+                if neutral and q != 0:
+                    q = - self.current_holdings[product]
+
+
+                if q != 0:
+                    with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                        file.write(f"{1 if neutral else q}\n")
+                    self.signal_df.loc[len(self.signal_df)-1] = [timestamp, 1 if neutral else q]
+
+                '''if True:
+                    with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                        file.write(f"{best_bid_amount}\n")
+                        file.write(f"{best_ask_amount}\n")
+                        file.write('\n')'''
+
+
+
+                if q < 0:
+                    self.touch_price = best_bid[0]
+                    orders.append(Order(product, self.touch_price, max(q, -best_bid_amount[0])))
+
+                elif q > 0:
+                    self.touch_price = best_ask[0]
+                    orders.append(Order(product, self.touch_price, min(q, -best_ask_amount[0])))
+
 
             result[product] = orders
 
         # Update dataframe with new weighted prices
-        self.df_kelp.loc[len(self.df_kelp)] = [timestamp] + [self.w_price[product] for product in ['KELP', 'SQUID_INK']]
+        self.df.loc[len(self.df)] = [timestamp] + [col[prod] for col in [self.std, self.ewm_fast, self.ewm_slow, self.w_price, self.ub, self.spread] for prod in self.products]
 
-        traderData = "SAMPLE"
-        conversions = 1
+
+        if timestamp==999900:
+
+            with open('/Users/maximesolere/desktop/log.txt', "a") as file:
+                file.write(f"{self.df['w_price_KELP'].max()}")
+            self.df.to_csv(f'/Users/maximesolere/desktop/df{self.day}.csv')
+            self.signal_df.to_csv('/Users/maximesolere/desktop/signal_df.csv')
+            self.day += 1
+            return 1
+
+
 
         logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData

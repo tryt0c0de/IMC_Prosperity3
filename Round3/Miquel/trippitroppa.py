@@ -5,9 +5,9 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-from Logger import Logger
+# from Logger import Logger
 from collections import deque
-logger = Logger()
+# logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -77,14 +77,14 @@ class Trader:
         # Initialize current holdings for basket assets.
         self.current_holdings = {}
         self.max_position = 1000
-        self.base_spread = 2.0
+        self.base_spread = 1
         self.skew_param = 0.2
         self.base_size = 1
 
-        self.spread_window = 1000
-        self.entry_threshold = 1.5
-        self.exit_threshold = 0.2
-        self.position_size = 1
+        self.spread_window = 500
+        self.entry_threshold = 0.5
+        self.exit_threshold = 0.1
+        self.position_size = 2
         self.spread_buffer = 1.0  # Execution cost buffer
         self.p_history: dict[deque] = {}
         self.tick = 0
@@ -1033,6 +1033,6 @@ class Trader:
         result.pop("CROISSANTS")
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
-        logger.flush(state,result,conversions,traderData)
+        # logger.flush(state,result,conversions,traderData)
 
         return result, conversions, traderData

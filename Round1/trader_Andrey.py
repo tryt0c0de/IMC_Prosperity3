@@ -75,7 +75,7 @@ class Trader:
             # Determine maximum multiplier allowed by the limit and regression coefficients.
             mul = int(self.limits[product] // abs(self.regression[self.asset1][product]))
             self.multiple = max(self.multiple, mul)
-        # Initialize current holdings for basket assets.
+        # # Initialize current holdings for basket assets.
         self.current_holdings = {}
         self.max_position = 1000
         self.base_spread = 1
@@ -88,10 +88,9 @@ class Trader:
         self.position_size = 2
         self.spread_buffer = 1.0  # Execution cost buffer
         self.p_history: dict[deque] = {}
-        self.tick = 0
+        self.tick = 3000000
         self.tick_vol = {'VOLCANIC_ROCK':0, 'VOLCANIC_ROCK_VOUCHER_9500':0, 'VOLCANIC_ROCK_VOUCHER_9750':0, 'VOLCANIC_ROCK_VOUCHER_10000':0}
-        self.limits_volc = {'VOLCANIC_ROCK':400, 'VOLCANIC_ROCK_VOUCHER_9500':200, 'VOLCANIC_ROCK_VOUCHER_9750':200, 'VOLCANIC_ROCK_VOUCHER_10000':200}
-        
+        self.limits_volc = {'VOLCANIC_ROCK':400, 'VOLCANIC_ROCK_VOUCHER_9500':200, 'VOLCANIC_ROCK_VOUCHER_9750':200, 'VOLCANIC_ROCK_VOUCHER_10000':200, 'VOLCANIC_ROCK_VOUCHER_10250':200, 'VOLCANIC_ROCK_VOUCHER_10500':200}
     def take_best_orders(
         self,
         product: str,
@@ -810,7 +809,7 @@ class Trader:
                 result[product] = self.liquidate(best_bid2[product], best_bid_amount2[product], best_ask2[product], best_ask_amount2[product], product)
         return result
     def options_trader(self, state: TradingState,p2,p1 ="VOLCANIC_ROCK_VOUCHER_10500" ) -> List[Order]:
-        self.tick += 1
+        #self.tick += 100
         result = {p1: [], p2: []}
 
         if p1 not in state.order_depths or p2 not in state.order_depths:
@@ -897,10 +896,6 @@ class Trader:
 
     def black_scholes_call(self, S, K, T, r, sigma):
         #Calculate the price of a European call option using Black-Scholes formula.
-        if T <= 0:
-            # For expired options, return max(0, S-K)
-            return max(0, S-K)
-        
         if sigma <= 0:
             # Handle invalid volatility
             return max(0, S-K * np.exp(-r*T))
@@ -911,7 +906,7 @@ class Trader:
         delta = self.norm_cdf(d1)
         return price, delta
 
-    def vol_trade(self, state: TradingState, p, under = "VOLCANIC_ROCK") -> List[Order]:
+    def vol_trade(self, state: TradingState, p, t, under = "VOLCANIC_ROCK") -> List[Order]:
         result = {p: [], under: []}
         if p not in state.order_depths or under not in state.order_depths:
             return result, 0, ""
@@ -928,7 +923,7 @@ class Trader:
             
             intrinsic = max(0, S - K * np.exp(-r * T))
             if V < intrinsic:
-                return 0, 0  # Option price below intrinsic value
+                return 0, 1  # Option price below intrinsic value
             
             # if T <= 0:
             #     return float('nan'), float('nan')  # Expired option
@@ -967,59 +962,123 @@ class Trader:
 
         p_depth = state.order_depths[p]
         s_depth = state.order_depths[under]
-
-        V = self.get_mid_price(p_depth)
+        time_converted = int(t)
+        T = (7000000 - time_converted) / 7000000
         S = self.get_mid_price(s_depth)
         K = int(p.split("_")[-1])
-        T = (7000000 - self.tick_vol[p]) / 7000000
-        if K is None or S is None or T is None:
-            return result
-        m_t = np.log(K / S) / np.sqrt(T)
+        K_perc = K / S
+        V = self.get_mid_price(p_depth)
         if V is None:
             return result
-        iv, delta = implied_volatility_newton(S, V, K, T)
-        if iv is None:
+        if S is None:
             return result
+        iv, delta = implied_volatility_newton(S=S, V=V, K=K, T=T)
+        m_t = np.log(K / S) / np.sqrt(T)
+        added = 0
+        added_under = 0
+        a = 0
+        # 1.66379726*m_t**2 + 0.00311211*m_t + 0.02251656
+        if iv < 2.15 * m_t**2 + 0.019 * m_t + 0.0225 - 0.001:   
+            for price in state.order_depths[p].sell_orders:
+                if K is None or S is None or T is None:
+                    return result
+                if price is None or price == 0:
+                    return result
+                K_perc = K / price
+                iv_c, delta = implied_volatility_newton(S=S, V=price, K=K, T=T)
+                if iv_c is None:
+                    return result
+                m_t = np.log(K / price) / np.sqrt(T)
+                if iv_c < 2.15 * m_t**2 + 0.019 * m_t + 0.0225 - 0.001:  
+                    #best_ask = min(p_depth.sell_orders.keys())
+                    best_ask = price
+                    best_ask_size = state.order_depths[p].sell_orders[price]
+                    # SIGNAL
 
-        a = 0.001
+                    if state.position.get(p, 0) + added < self.limits_volc[p]:
+                        max_p_buy = self.limits_volc[p] - (state.position.get(p, 0) + added)  # how much we can buy before hitting limit
+                        buy_size = min(abs(best_ask_size), max_p_buy)
+                        added += buy_size
+                        result[p].append(Order(p, best_ask, buy_size))
+
+                        # Delta hedge
+                        s_price_sell = max(state.order_depths[under].buy_orders.keys())
+                        max_under_sell = self.limits_volc[under] + (state.position.get(under, 0) + added_under) # how much we can sell before hitting -limit
+                        hedge_size = min(int(round(delta * buy_size)), max_under_sell)
+                        if hedge_size > 0:
+                            added_under -= hedge_size
+                            result[under].append(Order(under, s_price_sell, -hedge_size))
+
+                    # self.pos[p] -= sell_size
+                    # self.pos['VOLCANIC_ROCK'] -= round(0.5 * sell_size)
+
+        #self.tick_vol[p] += 1
+        added = 0
+        added_under = 0
         b = 0
-        best_ask = min(p_depth.sell_orders.keys())
-        best_bid = max(p_depth.buy_orders.keys())
-        best_ask_size = p_depth.sell_orders[best_ask]
-        best_bid_size = p_depth.buy_orders[best_bid]
-        s_price_buy = s_depth.sell_orders[min(s_depth.sell_orders.keys())]
-        s_price_sell = s_depth.buy_orders[max(s_depth.buy_orders.keys())]
-        # SIGNAL
-        if iv < 2.2*m_t**2 + 0.02*m_t + 0.2 - a:
-            if state.position.get(p, 0) < self.limits_volc[p] and state.position.get(under, 0) < self.limits_volc[under]:
-                max_p_buy = self.limits_volc[p] - state.position.get(p, 0)
-                if delta > 0.1:
-                    max_volc_buy = 1/delta * (self.limits_volc[under] - state.position.get(under, 0))  # since 0.5 * p <= volc => p <= 2 * volc
-                else:
-                    max_volc_buy = 1000
-                buy_size = min(best_ask_size, max_p_buy, max_volc_buy)
-                
-                result[p].append(Order(p, best_ask, int(buy_size)))
-                result[p].append(Order(under, s_price_sell, int(-round(delta * buy_size))))
-                
-                # self.pos[p] += buy_size
-                # self.pos['VOLCANIC_ROCK'] += round(0.5 * buy_size)
-        elif iv >= 2.2*m_t**2 + 0.02*m_t + 0.2 + b:    
-            if state.position.get(p, 0) > -self.limits_volc[p] and state.position.get(under, 0) > -self.limits_volc[under]:
-                max_p_sell = state.position.get(p, 0) + self.limits_volc[p]  # how much we can sell before hitting -limit
-                if delta > 0.1:
-                    max_volc_sell = 1/delta * (state.position.get(under, 0) + self.limits_volc[under])  # 0.5*p <= pos + limit ⇒ p <= 2*(pos + limit)
-                else:
-                    max_volc_sell = 1000
-                sell_size = min(best_bid_size, max_p_sell, max_volc_sell)
+        m_t = np.log(K / S) / np.sqrt(T)
+        if iv >= 2.15 * m_t**2 + 0.019 * m_t + 0.0225 + 0.001:  
+            for price in state.order_depths[p].buy_orders:
+                if K is None or S is None or T is None:
+                    return result
+                if price is None or price == 0:
+                    return result
+                K_perc = K / price
+                iv_c, delta = implied_volatility_newton(S=S, V=price, K=K_perc, T=T)
+                if iv_c is None:
+                    return result
+                m_t = np.log(K / price) / np.sqrt(T)
+                if iv_c >= 2.15 * m_t**2 + 0.019 * m_t + 0.0225 + 0.001: 
+                    #best_ask = min(p_depth.sell_orders.keys())
+                    best_bid = price
+                    best_bid_size = state.order_depths[p].buy_orders[price]
+                    # SIGNAL
+                    if (state.position.get(p, 0) + added) > -self.limits_volc[p]:
+                        max_p_sell = (state.position.get(p, 0) + added) + self.limits_volc[p]  # how much we can sell before hitting -limit
+                        sell_size = min(best_bid_size, max_p_sell)
+                        added -= sell_size
+                        result[p].append(Order(p, best_bid, int(-sell_size)))
+                        #result[under].append(Order(under, s_price_buy, int(round(delta * sell_size))))
 
-                result[p].append(Order(p, best_bid, int(-sell_size)))
-                result[under].append(Order(under, s_price_buy, int(round(delta * sell_size))))
+                        # self.pos[p] -= sell_size
+                        # self.pos['VOLCANIC_ROCK'] -= round(0.5 * sell_size)
+                                                # Delta hedge
+                        s_price_buy = max(state.order_depths[under].sell_orders.keys())
+                        max_under_buy = self.limits_volc[under] - (state.position.get(under, 0) + added_under) # how much we can sell before hitting -limit
+                        hedge_size = min(int(round(delta * sell_size)), max_under_buy)
+                        if hedge_size > 0:
+                            added_under += hedge_size
+                            result[under].append(Order(under, s_price_buy, hedge_size))
 
-                # self.pos[p] -= sell_size
-                # self.pos['VOLCANIC_ROCK'] -= round(0.5 * sell_size)
+        # === Continuous Delta Hedging ===
+        # Estimate net delta of options position
+        opt_pos = state.position.get(p, 0)
+        opt_price = self.get_mid_price(p_depth)
+        _, total_delta = implied_volatility_newton(S=S, V=opt_price, K=K, T=T)
 
-        self.tick_vol[p] += 1
+        net_opt_delta = opt_pos * total_delta
+        underlying_pos = state.position.get(under, 0)
+        desired_underlying_pos = -int(round(net_opt_delta))
+
+        hedge_diff = desired_underlying_pos - underlying_pos
+
+        if hedge_diff != 0:
+            if hedge_diff > 0:
+                # Buy underlying
+                best_ask = min(s_depth.sell_orders.keys())
+                max_buy = self.limits_volc[under] - underlying_pos
+                hedge_size = min(hedge_diff, max_buy)
+                if hedge_size > 0:
+                    result[under].append(Order(under, best_ask, hedge_size))
+            else:
+                # Sell underlying
+                best_bid = max(s_depth.buy_orders.keys())
+                max_sell = self.limits_volc[under] + underlying_pos
+                hedge_size = min(-hedge_diff, max_sell)
+                if hedge_size > 0:
+                    result[under].append(Order(under, best_bid, -hedge_size))
+
+        #self.tick_vol[p] += 1
         return result
     
     def run(self, state: TradingState):
@@ -1029,147 +1088,151 @@ class Trader:
 
         result = {}
 
-        if Product.RAINFOREST_RESIN in self.params and Product.RAINFOREST_RESIN in state.order_depths:
-            rainforest_position = (
-                state.position[Product.RAINFOREST_RESIN]
-                if Product.RAINFOREST_RESIN in state.position
-                else 0
-            )
-            rainforest_take_orders, buy_order_volume, sell_order_volume = (
-                self.take_orders(
-                    Product.RAINFOREST_RESIN,
-                    state.order_depths[Product.RAINFOREST_RESIN],
-                    self.params[Product.RAINFOREST_RESIN]["fair_value"],
-                    self.params[Product.RAINFOREST_RESIN]["take_width"],
-                    rainforest_position,
-                )
-            )
-            buy_order_volume = 0
-            sell_order_volume = 0
-            rainforest_clear_orders, buy_order_volume, sell_order_volume = (
-                self.clear_orders(
-                    Product.RAINFOREST_RESIN,
-                    state.order_depths[Product.RAINFOREST_RESIN],
-                    self.params[Product.RAINFOREST_RESIN]["fair_value"],
-                    self.params[Product.RAINFOREST_RESIN]["clear_width"],
-                    rainforest_position,
-                    buy_order_volume,
-                    sell_order_volume,
-                )
-            )
-            rainforest_make_orders, _, _ = self.make_orders(
-                Product.RAINFOREST_RESIN,
-                state.order_depths[Product.RAINFOREST_RESIN],
-                self.params[Product.RAINFOREST_RESIN]["fair_value"],
-                rainforest_position,
-                buy_order_volume,
-                sell_order_volume,
-                self.params[Product.RAINFOREST_RESIN]["disregard_edge"],
-                self.params[Product.RAINFOREST_RESIN]["join_edge"],
-                self.params[Product.RAINFOREST_RESIN]["default_edge"],
-                True,
-                self.params[Product.RAINFOREST_RESIN]["soft_position_limit"],
-            )
-            result[Product.RAINFOREST_RESIN] = (
-                 rainforest_clear_orders + rainforest_make_orders + rainforest_take_orders
-            )
-        if Product.KELP in self.params and Product.KELP in state.order_depths:
-            kelp_position = (
-                state.position[Product.KELP]
-                if Product.KELP in state.position
-                else 0
-            )
-            kelp_fair_value = self.kelp_fair_value(
-                state.order_depths[Product.KELP], traderObject
-            )
-           # Use our specialized take strategy for KELP
-            kelp_take_orders, buy_order_volume, sell_order_volume = self.kelp_take_strategy(
-                state.order_depths[Product.KELP],
-                kelp_position,
-                traderObject,
-                0,
-                0
-            )
-            kelp_clear_orders, buy_order_volume, sell_order_volume = (
-                self.clear_orders(
-                    Product.KELP,
-                    state.order_depths[Product.KELP],
-                    kelp_fair_value,
-                    self.params[Product.KELP]["clear_width"],
-                    kelp_position,
-                    buy_order_volume,
-                    sell_order_volume,
-                )
-            )
-            kelp_make_orders, _, _ = self.make_orders_kelp(
-            state.order_depths[Product.KELP],
-            kelp_fair_value,
-            kelp_position,
-            buy_order_volume,
-            sell_order_volume,
-            self.params[Product.KELP]["disregard_edge"],
-            self.params[Product.KELP]["join_edge"],
-            self.params[Product.KELP]["default_edge"],
-            self.params[Product.KELP]["adverse_volume"],
-            )
-            result[Product.KELP] = (
-                 kelp_clear_orders + kelp_make_orders + kelp_take_orders
-            )
-            if Product.SQUID_INK in self.params and Product.SQUID_INK in state.order_depths:
-                order_depth = state.order_depths[Product.SQUID_INK]
-                position = state.position.get(Product.SQUID_INK, 0)
-                fair_value = self.fair_value_squid_ink(order_depth)
+        # if Product.RAINFOREST_RESIN in self.params and Product.RAINFOREST_RESIN in state.order_depths:
+        #     rainforest_position = (
+        #         state.position[Product.RAINFOREST_RESIN]
+        #         if Product.RAINFOREST_RESIN in state.position
+        #         else 0
+        #     )
+        #     rainforest_take_orders, buy_order_volume, sell_order_volume = (
+        #         self.take_orders(
+        #             Product.RAINFOREST_RESIN,
+        #             state.order_depths[Product.RAINFOREST_RESIN],
+        #             self.params[Product.RAINFOREST_RESIN]["fair_value"],
+        #             self.params[Product.RAINFOREST_RESIN]["take_width"],
+        #             rainforest_position,
+        #         )
+        #     )
+        #     buy_order_volume = 0
+        #     sell_order_volume = 0
+        #     rainforest_clear_orders, buy_order_volume, sell_order_volume = (
+        #         self.clear_orders(
+        #             Product.RAINFOREST_RESIN,
+        #             state.order_depths[Product.RAINFOREST_RESIN],
+        #             self.params[Product.RAINFOREST_RESIN]["fair_value"],
+        #             self.params[Product.RAINFOREST_RESIN]["clear_width"],
+        #             rainforest_position,
+        #             buy_order_volume,
+        #             sell_order_volume,
+        #         )
+        #     )
+        #     rainforest_make_orders, _, _ = self.make_orders(
+        #         Product.RAINFOREST_RESIN,
+        #         state.order_depths[Product.RAINFOREST_RESIN],
+        #         self.params[Product.RAINFOREST_RESIN]["fair_value"],
+        #         rainforest_position,
+        #         buy_order_volume,
+        #         sell_order_volume,
+        #         self.params[Product.RAINFOREST_RESIN]["disregard_edge"],
+        #         self.params[Product.RAINFOREST_RESIN]["join_edge"],
+        #         self.params[Product.RAINFOREST_RESIN]["default_edge"],
+        #         True,
+        #         self.params[Product.RAINFOREST_RESIN]["soft_position_limit"],
+        #     )
+        #     result[Product.RAINFOREST_RESIN] = (
+        #          rainforest_clear_orders + rainforest_make_orders + rainforest_take_orders
+        #     )
+        # if Product.KELP in self.params and Product.KELP in state.order_depths:
+        #     kelp_position = (
+        #         state.position[Product.KELP]
+        #         if Product.KELP in state.position
+        #         else 0
+        #     )
+        #     kelp_fair_value = self.kelp_fair_value(
+        #         state.order_depths[Product.KELP], traderObject
+        #     )
+        #    # Use our specialized take strategy for KELP
+        #     kelp_take_orders, buy_order_volume, sell_order_volume = self.kelp_take_strategy(
+        #         state.order_depths[Product.KELP],
+        #         kelp_position,
+        #         traderObject,
+        #         0,
+        #         0
+        #     )
+        #     kelp_clear_orders, buy_order_volume, sell_order_volume = (
+        #         self.clear_orders(
+        #             Product.KELP,
+        #             state.order_depths[Product.KELP],
+        #             kelp_fair_value,
+        #             self.params[Product.KELP]["clear_width"],
+        #             kelp_position,
+        #             buy_order_volume,
+        #             sell_order_volume,
+        #         )
+        #     )
+        #     kelp_make_orders, _, _ = self.make_orders_kelp(
+        #     state.order_depths[Product.KELP],
+        #     kelp_fair_value,
+        #     kelp_position,
+        #     buy_order_volume,
+        #     sell_order_volume,
+        #     self.params[Product.KELP]["disregard_edge"],
+        #     self.params[Product.KELP]["join_edge"],
+        #     self.params[Product.KELP]["default_edge"],
+        #     self.params[Product.KELP]["adverse_volume"],
+        #     )
+        #     result[Product.KELP] = (
+        #          kelp_clear_orders + kelp_make_orders + kelp_take_orders
+        #     )
+        #     if Product.SQUID_INK in self.params and Product.SQUID_INK in state.order_depths:
+        #         order_depth = state.order_depths[Product.SQUID_INK]
+        #         position = state.position.get(Product.SQUID_INK, 0)
+        #         fair_value = self.fair_value_squid_ink(order_depth)
 
-                if fair_value is not None:
-                    take_orders, buy_vol, sell_vol = self.take_orders(
-                    Product.SQUID_INK,
-                    order_depth,
-                    fair_value,
-                    self.params[Product.SQUID_INK]["take_width"],
-                    position,
-                    )
+        #         if fair_value is not None:
+        #             take_orders, buy_vol, sell_vol = self.take_orders(
+        #             Product.SQUID_INK,
+        #             order_depth,
+        #             fair_value,
+        #             self.params[Product.SQUID_INK]["take_width"],
+        #             position,
+        #             )
 
-                clear_orders, buy_vol, sell_vol = self.clear_orders(
-                    Product.SQUID_INK,
-                    order_depth,
-                    fair_value,
-                    self.params[Product.SQUID_INK]["clear_width"],
-                    position,
-                    buy_vol,
-                    sell_vol,
-                )
+        #         clear_orders, buy_vol, sell_vol = self.clear_orders(
+        #             Product.SQUID_INK,
+        #             order_depth,
+        #             fair_value,
+        #             self.params[Product.SQUID_INK]["clear_width"],
+        #             position,
+        #             buy_vol,
+        #             sell_vol,
+        #         )
 
-                make_orders, _, _ = self.make_orders(
-                    Product.SQUID_INK,
-                    order_depth,
-                    fair_value,
-                    position,
-                    buy_vol,
-                    sell_vol,
-                    self.params[Product.SQUID_INK]["disregard_edge"],
-                    self.params[Product.SQUID_INK]["join_edge"],
-                    self.params[Product.SQUID_INK]["default_edge"],
-                    True,
-                    self.params[Product.SQUID_INK]["soft_position_limit"],
-                )
+        #         make_orders, _, _ = self.make_orders(
+        #             Product.SQUID_INK,
+        #             order_depth,
+        #             fair_value,
+        #             position,
+        #             buy_vol,
+        #             sell_vol,
+        #             self.params[Product.SQUID_INK]["disregard_edge"],
+        #             self.params[Product.SQUID_INK]["join_edge"],
+        #             self.params[Product.SQUID_INK]["default_edge"],
+        #             True,
+        #             self.params[Product.SQUID_INK]["soft_position_limit"],
+        #         )
 
-                result[Product.SQUID_INK] = take_orders +clear_orders + make_orders
+        #         result[Product.SQUID_INK] = take_orders +clear_orders + make_orders
 
-        arb_orders = self.synthetic_real_arb(state)
-        for order in arb_orders:
-            if order.symbol in result:
-                result[order.symbol].append(order)
-            else:
-                result[order.symbol] = [order]
-        basket_orders = self.trader_max(state)
-        for asset, orders_list in basket_orders.items():
-            if asset in result:
-                result[asset].extend(orders_list)
-            else:
-                result[asset] = orders_list
-
-        for p in ["VOLCANIC_ROCK_VOUCHER_9500", "VOLCANIC_ROCK_VOUCHER_9750", "VOLCANIC_ROCK_VOUCHER_10000"]:
-            vol_trade_result = self.vol_trade(state, p)
+        # arb_orders = self.synthetic_real_arb(state)
+        # for order in arb_orders:
+        #     if order.symbol in result:
+        #         result[order.symbol].append(order)
+        #     else:
+        #         result[order.symbol] = [order]
+        # basket_orders = self.trader_max(state)
+        # for asset, orders_list in basket_orders.items():
+        #     if asset in result:
+        #         result[asset].extend(orders_list)
+        #     else:
+        #         result[asset] = orders_list
+        # "VOLCANIC_ROCK_VOUCHER_9500", "VOLCANIC_ROCK_VOUCHER_9750", "VOLCANIC_ROCK_VOUCHER_10000", "VOLCANIC_ROCK_VOUCHER_10250", "VOLCANIC_ROCK_VOUCHER_10500"
+        for p2 in ["VOLCANIC_ROCK_VOUCHER_9500", "VOLCANIC_ROCK_VOUCHER_9750", "VOLCANIC_ROCK_VOUCHER_10000", "VOLCANIC_ROCK_VOUCHER_10250"]:
+            temp_result = self.options_trader(state,p2)
+            self.p_history.pop("VOLCANIC_ROCK_VOUCHER_10500",None)
+            result[p2] = temp_result[p2]   
+        for p in ["VOLCANIC_ROCK_VOUCHER_10500"]:
+            vol_trade_result = self.vol_trade(state, p = p, t = self.tick)
             if p in result:
                 result[p].extend(vol_trade_result[p])
             else:
@@ -1178,14 +1241,12 @@ class Trader:
                 result['VOLCANIC_ROCK'].extend(vol_trade_result['VOLCANIC_ROCK'])
             else:
                 result['VOLCANIC_ROCK'] = vol_trade_result['VOLCANIC_ROCK']
-        # for p2 in ["VOLCANIC_ROCK_VOUCHER_10250"]:
-        #     temp_result = self.options_trader(state,p2)
-        #     self.p_history.pop("VOLCANIC_ROCK_VOUCHER_10500",None)
-        #     result[p2] = temp_result[p2]   
+        #self.tick += 100
+        
 
 
 
-        result.pop("CROISSANTS")
+        #result.pop("CROISSANTS")
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
         #logger.flush(state,result,conversions,traderData)

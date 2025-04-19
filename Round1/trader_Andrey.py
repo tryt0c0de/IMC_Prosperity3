@@ -5,10 +5,10 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-#from Logger import Logger
+from Logger import Logger
 from collections import deque
 import math
-#logger = Logger()
+logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -52,36 +52,38 @@ PARAMS = {
 class Trader:
     def __init__(self, params=None):
         #if params is [1.0]:
-        self.params = PARAMS
-        #self.params = params
+        # self.params = PARAMS
+        # #self.params = params
 
-        self.LIMIT = {Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50}
-        self.products = ['CROISSANTS', 'DJEMBES']
-        self.mid = {}  # To store mid-prices of basket assets
-        self.to_liquidate = {prod: False for prod in self.products}
-        self.asset1 = 'DJEMBES'
-        self.asset2 = ['CROISSANTS']
-        self.threshold = 1
-        self.prop = 1 / 2
-        self.limits = {'CROISSANTS': 250, 'DJEMBES': 60}
-        self.regression = {
-                'DJEMBES': {
-                'Intercept': 6913.009686452366,
-                'CROISSANTS': 1.5177902648379593,
-                'std': 23.282224239738}}
-        self.multiple = 0
-        self.track_pnl_baskets = {"basket1": 0, "basket2": 0}
-        for product in self.asset2:
-            # Determine maximum multiplier allowed by the limit and regression coefficients.
-            mul = int(self.limits[product] // abs(self.regression[self.asset1][product]))
-            self.multiple = max(self.multiple, mul)
-        # # Initialize current holdings for basket assets.
+        # self.LIMIT = {Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50}
+        # self.products = ['CROISSANTS', 'DJEMBES']
+        # self.mid = {}  # To store mid-prices of basket assets
+        # self.to_liquidate = {prod: False for prod in self.products}
+        # self.asset1 = 'DJEMBES'
+        # self.asset2 = ['CROISSANTS']
+        # self.threshold = 1
+        # self.prop = 1 / 2
+        # self.limits = {'CROISSANTS': 250, 'DJEMBES': 60}
+        # self.regression = {
+        #         'DJEMBES': {
+        #         'Intercept': 6913.009686452366,
+        #         'CROISSANTS': 1.5177902648379593,
+        #         'std': 23.282224239738}}
+        # self.multiple = 0
+        # self.track_pnl_baskets = {"basket1": 0, "basket2": 0}
+        # for product in self.asset2:
+        #     # Determine maximum multiplier allowed by the limit and regression coefficients.
+        #     mul = int(self.limits[product] // abs(self.regression[self.asset1][product]))
+        #     self.multiple = max(self.multiple, mul)
+
+
+        # VOLC options
+        # Initialize current holdings for basket assets.
         self.current_holdings = {}
         self.max_position = 1000
         self.base_spread = 1
         self.skew_param = 0.2
         self.base_size = 1
-
         self.spread_window = 500
         self.entry_threshold = 0.5
         self.exit_threshold = 0.1
@@ -91,6 +93,7 @@ class Trader:
         self.tick = 3000000
         self.tick_vol = {'VOLCANIC_ROCK':0, 'VOLCANIC_ROCK_VOUCHER_9500':0, 'VOLCANIC_ROCK_VOUCHER_9750':0, 'VOLCANIC_ROCK_VOUCHER_10000':0}
         self.limits_volc = {'VOLCANIC_ROCK':400, 'VOLCANIC_ROCK_VOUCHER_9500':200, 'VOLCANIC_ROCK_VOUCHER_9750':200, 'VOLCANIC_ROCK_VOUCHER_10000':200, 'VOLCANIC_ROCK_VOUCHER_10250':200, 'VOLCANIC_ROCK_VOUCHER_10500':200}
+    
     def take_best_orders(
         self,
         product: str,
@@ -1241,7 +1244,7 @@ class Trader:
                 result['VOLCANIC_ROCK'].extend(vol_trade_result['VOLCANIC_ROCK'])
             else:
                 result['VOLCANIC_ROCK'] = vol_trade_result['VOLCANIC_ROCK']
-        #self.tick += 100
+        self.tick += 100
         
 
 
@@ -1249,6 +1252,6 @@ class Trader:
         #result.pop("CROISSANTS")
         conversions = 1
         traderData = jsonpickle.encode(traderObject)
-        #logger.flush(state,result,conversions,traderData)
+        logger.flush(state,result,conversions,traderData)
 
         return result, conversions, traderData

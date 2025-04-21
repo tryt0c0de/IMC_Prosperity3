@@ -6,8 +6,8 @@ import numpy as np
 import math
 from typing import Dict 
 from collections import deque
-from Logger import Logger
-logger = Logger()
+# from Logger import Logger
+# logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -82,22 +82,23 @@ class Trader:
                     if trade.buyer == name:
                         sellQty = trade.quantity
                         sellPrice= trade.price
-                        sellTrade= Order(product,sellPrice,-availableSell)
+                        sellTrade= Order(product,int(sellPrice),int(-availableSell))
                         productTrades.append(sellTrade)
                     if trade.seller ==name:
                         buyQty= trade.quantity
                         buyPrice= trade.price
-                        buyTrade= Order(product,buyPrice,availableBuy)
+                        buyTrade= Order(product,int(buyPrice),int(availableBuy))
                         productTrades.append(buyTrade)
                 result[product] = productTrades
             except:
-                print("Can't Trade this product")
+                # print("Can't Trade this product")
+                continue
         return result
     def run(self,state:TradingState):
         productsToTrade = [Product.DJEMBES,Product.RAINFOREST_RESIN,Product.SQUID_INK,Product.VOLCANIC_ROCK_VOUCHER_10000,
                            Product.VOLCANIC_ROCK_VOUCHER_10250,Product.VOLCANIC_ROCK_VOUCHER_9500,Product.VOLCANIC_ROCK_VOUCHER_9750]
         result = self.tradevs(state,"Penelope",productsToTrade)
-        logger.flush(state,result,1,"")
-        return result,1,""
+        # logger.flush(state,result,1,"")
+        return result,1,"trader"
 
 

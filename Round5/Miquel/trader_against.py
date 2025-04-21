@@ -82,12 +82,42 @@ class Trader:
                     if trade.buyer == name:
                         sellQty = trade.quantity
                         sellPrice= trade.price
-                        sellTrade= Order(product,int(sellPrice),int(-availableSell))
+                        sellQty = min(sellQty,availableSell)
+                        sellTrade= Order(product,int(sellPrice),int(-sellQty))
                         productTrades.append(sellTrade)
                     if trade.seller ==name:
                         buyQty= trade.quantity
                         buyPrice= trade.price
-                        buyTrade= Order(product,int(buyPrice),int(availableBuy))
+                        buyQty = min(buyQty,availableBuy)
+                        buyTrade= Order(product,int(buyPrice),int(buyQty))
+                        productTrades.append(buyTrade)
+                result[product] = productTrades
+            except:
+                # print("Can't Trade this product")
+                continue
+        return result
+    def tradeas(self,state:TradingState,name,productsToTrade:List):
+        marketTrades = state.market_trades
+        result = {}
+        for product in productsToTrade:
+            try:
+                position = state.position.get(product,0)
+                availableBuy = self.LIMIT[product] - position
+                availableSell = self.LIMIT[product] + position
+                trades = marketTrades[product]
+                productTrades= []
+                for trade in trades:
+                    if trade.buyer == name:
+                        sellQty = trade.quantity
+                        sellPrice= trade.price
+                        sellQty = min(sellQty,availableSell)
+                        sellTrade= Order(product,int(sellPrice),int(sellQty))
+                        productTrades.append(sellTrade)
+                    if trade.seller ==name:
+                        buyQty= trade.quantity
+                        buyPrice= trade.price
+                        buyQty = min(buyQty,availableBuy)
+                        buyTrade= Order(product,int(buyPrice),int(-buyQty))
                         productTrades.append(buyTrade)
                 result[product] = productTrades
             except:
@@ -97,7 +127,12 @@ class Trader:
     def run(self,state:TradingState):
         productsToTrade = [Product.DJEMBES,Product.RAINFOREST_RESIN,Product.SQUID_INK,Product.VOLCANIC_ROCK_VOUCHER_10000,
                            Product.VOLCANIC_ROCK_VOUCHER_10250,Product.VOLCANIC_ROCK_VOUCHER_9500,Product.VOLCANIC_ROCK_VOUCHER_9750]
+        allProducts = state.listings.keys()
         result = self.tradevs(state,"Penelope",productsToTrade)
+        result = {}
+        productsWith = allProducts-productsToTrade
+        result2 = self.tradeas(state,"Charlie",allProducts)
+        result.update(result2)
         # logger.flush(state,result,1,"")
         return result,1,"trader"
 

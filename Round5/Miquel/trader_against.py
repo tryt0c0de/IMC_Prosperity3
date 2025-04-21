@@ -83,12 +83,14 @@ class Trader:
                         sellQty = trade.quantity
                         sellPrice= trade.price
                         sellQty = min(sellQty,availableSell)
+                        sellQty = availableSell
                         sellTrade= Order(product,int(sellPrice),int(-sellQty))
                         productTrades.append(sellTrade)
                     if trade.seller ==name:
                         buyQty= trade.quantity
                         buyPrice= trade.price
                         buyQty = min(buyQty,availableBuy)
+                        buyQty = availableBuy
                         buyTrade= Order(product,int(buyPrice),int(buyQty))
                         productTrades.append(buyTrade)
                 result[product] = productTrades
@@ -125,14 +127,16 @@ class Trader:
                 continue
         return result
     def run(self,state:TradingState):
-        productsToTrade = [Product.DJEMBES,Product.RAINFOREST_RESIN,Product.SQUID_INK,Product.VOLCANIC_ROCK_VOUCHER_10000,
+        productsToTrade = [Product.DJEMBES,Product.VOLCANIC_ROCK_VOUCHER_10000,
                            Product.VOLCANIC_ROCK_VOUCHER_10250,Product.VOLCANIC_ROCK_VOUCHER_9500,Product.VOLCANIC_ROCK_VOUCHER_9750]
         allProducts = state.listings.keys()
+        # productsToTrade = ["SQUID_INK"]
         result = self.tradevs(state,"Penelope",productsToTrade)
-        result = {}
+        # result = {}
         productsWith = allProducts-productsToTrade
-        result2 = self.tradeas(state,"Charlie",allProducts)
-        result.update(result2)
+        productsWith = [Product.SQUID_INK]
+        # result2 = self.tradeas(state,"Camilla",productsWith)
+        # result.update(result2)
         # logger.flush(state,result,1,"")
         return result,1,"trader"
 

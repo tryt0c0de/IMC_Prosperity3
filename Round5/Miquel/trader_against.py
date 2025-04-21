@@ -68,30 +68,35 @@ class Trader:
                 logger.print(f"Porcodio buyer{trade.buyer} seller {trade.seller}")
         return"""
     
-    def tradevs(self,state:TradingState,name):
+    def tradevs(self,state:TradingState,name,productsToTrade:List):
         marketTrades = state.market_trades
         result = {}
-        for product in marketTrades.keys():
-            position = state.position.get(product,0)
-            availableBuy = self.LIMIT[product] - position
-            availableSell = self.LIMIT[product] + position
-            trades = marketTrades[product]
-            productTrades= []
-            for trade in trades:
-                if trade.buyer == name:
-                    sellQty = trade.quantity
-                    sellPrice= trade.price
-                    sellTrade= Order(product,sellPrice,-availableSell)
-                    productTrades.append(sellTrade)
-                if trade.seller ==name:
-                    buyQty= trade.quantity
-                    buyPrice= trade.price
-                    buyTrade= Order(product,buyPrice,availableBuy)
-                    productTrades.append(buyTrade)
-            result[product] = productTrades
+        for product in productsToTrade:
+            try:
+                position = state.position.get(product,0)
+                availableBuy = self.LIMIT[product] - position
+                availableSell = self.LIMIT[product] + position
+                trades = marketTrades[product]
+                productTrades= []
+                for trade in trades:
+                    if trade.buyer == name:
+                        sellQty = trade.quantity
+                        sellPrice= trade.price
+                        sellTrade= Order(product,sellPrice,-availableSell)
+                        productTrades.append(sellTrade)
+                    if trade.seller ==name:
+                        buyQty= trade.quantity
+                        buyPrice= trade.price
+                        buyTrade= Order(product,buyPrice,availableBuy)
+                        productTrades.append(buyTrade)
+                result[product] = productTrades
+            except:
+                print("Can't Trade this product")
         return result
     def run(self,state:TradingState):
-        result = self.tradevs(state,"Penelope")
+        productsToTrade = [Product.DJEMBES,Product.RAINFOREST_RESIN,Product.SQUID_INK,Product.VOLCANIC_ROCK_VOUCHER_10000,
+                           Product.VOLCANIC_ROCK_VOUCHER_10250,Product.VOLCANIC_ROCK_VOUCHER_9500,Product.VOLCANIC_ROCK_VOUCHER_9750]
+        result = self.tradevs(state,"Penelope",productsToTrade)
         logger.flush(state,result,1,"")
         return result,1,""
 

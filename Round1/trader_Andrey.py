@@ -953,14 +953,14 @@ class Trader:
         S = self.get_mid_price(s_depth)
         K = int(p.split("_")[-1])
         if abs(K - S) >= 450:
-            a = 0.015
-            b = 0.008
+            a = 0.09
+            b = 0.02
         elif abs(K - S) >= 250:
-            a = 0.018
-            b = 0.012
+            a = 0.015
+            b = 0.007
         elif abs(K - S) >= 0:
-            a = 0.022
-            b = 0.019
+            a = 0.02
+            b = 0.02
         if self.prev_price is not None:
             self.log_returns.append(np.log(S) - np.log(self.prev_price))
             annualized_spent = 100 / T_together

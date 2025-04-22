@@ -5,8 +5,8 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-from collections import deque
 # from Logger import Logger
+from collections import deque
 # logger = Logger()
 
 class Product:
@@ -14,17 +14,6 @@ class Product:
     KELP = "KELP"
     SQUID_INK = "SQUID_INK"
     MACARON = "MAGNIFICENT_MACARONS"
-    BASKET1 = "PICNIC_BASKET1"
-    BASKET2 = "PICNIC_BASKET2"
-    CROISSANTS = "CROISSANTS"
-    JAMS = "JAMS"
-    DJEMBES = "DJEMBES"
-    VOLCANIC_ROCK = "VOLCANIC_ROCK"
-    VOLCANIC_ROCK_VOUCHER_9500 = "VOLCANIC_ROCK_VOUCHER_9500"
-    VOLCANIC_ROCK_VOUCHER_9750 = "VOLCANIC_ROCK_VOUCHER_9750"
-    VOLCANIC_ROCK_VOUCHER_10000 = "VOLCANIC_ROCK_VOUCHER_10000"
-    VOLCANIC_ROCK_VOUCHER_10250 = "VOLCANIC_ROCK_VOUCHER_10250"
-    VOLCANIC_ROCK_VOUCHER_10500 = "VOLCANIC_ROCK_VOUCHER_10500"
 
 
 PARAMS = {
@@ -71,48 +60,50 @@ PARAMS = {
 }
 
 
+
 class Trader:
-    def __init__(self):
+    def __init__(self, params=None):
+        #if params is [1.0]:
         self.params = PARAMS
-        self.LIMIT = {Product.RAINFOREST_RESIN: 50, Product.KELP: 50,
-                      Product.SQUID_INK: 50,Product.MACARON:75,
-                      Product.CROISSANTS:250, Product.JAMS: 350,
-                      Product.DJEMBES: 60, Product.DJEMBES:60,
-                      Product.BASKET1: 60, Product.BASKET2: 100,
-                      Product.VOLCANIC_ROCK: 400,
-                      Product.VOLCANIC_ROCK_VOUCHER_9500:200,
-                      Product.VOLCANIC_ROCK_VOUCHER_9750: 200,
-                      Product.VOLCANIC_ROCK_VOUCHER_10000: 200,
-                      Product.VOLCANIC_ROCK_VOUCHER_10250: 200,
-                      Product.VOLCANIC_ROCK_VOUCHER_10500: 200,
-                      Product.MACARON:75
-                      }
-    # First when there are no trades just post 1 bid and ask at the best ask and bid to take both sides and see who fills them:
-    # Then when we have info about who is filling that trades if it is a bad trader (e.g Paris) post a bigger trade against that bot
-    # If we have traded against one of the bots that are good try to break even with that single trade (post again same bid/ask as ask/bid)
-    # Do that on every iteration?
-    """
-    def sendTestTrade(self,state:TradingState):
-        #Send one bid one ask at the best ask best bid respectively:
-        orders = {}
-        for product in state.order_depths.keys():
-            buy_orders = state.order_depths[product].buy_orders.keys()
-            sell_orders = state.order_depths[product].sell_orders.keys()
-            if buy_orders and sell_orders:
-                best_bid = max(buy_orders)
-                best_ask = min(sell_orders)
-                product_orders = [Order(product,best_bid,-1),Order(product,best_ask,1)]
-                orders[product] = product_orders
-        return orders"""
-    
-    """def analyzeMarketTrades(self,state:TradingState):
-        marketTrades = state.market_trades
-        # For now I'll asume that all the bots are good except paris
-        for product in marketTrades.keys():
-            trades = marketTrades[product]
-            for trade in trades:
-                logger.print(f"Porcodio buyer{trade.buyer} seller {trade.seller}")
-        return"""
+        #self.params = params
+
+        self.LIMIT = {Product.RAINFOREST_RESIN: 50, Product.KELP: 50,Product.SQUID_INK: 50,Product.MACARON:75}
+        self.products = ['CROISSANTS', 'DJEMBES']
+        self.mid = {}  # To store mid-prices of basket assets
+        self.to_liquidate = {prod: False for prod in self.products}
+        self.asset1 = 'DJEMBES'
+        self.asset2 = ['CROISSANTS']
+        self.threshold = 1
+        self.prop = 1 / 2
+        self.limits = {'CROISSANTS': 250, 'DJEMBES': 60}
+        self.regression = {
+                'DJEMBES': {
+                'Intercept': 6913.009686452366,
+                'CROISSANTS': 1.5177902648379593,
+                'std': 23.282224239738}}
+        self.multiple = 0
+        self.track_pnl_baskets = {"basket1": 0, "basket2": 0}
+        for product in self.asset2:
+            # Determine maximum multiplier allowed by the limit and regression coefficients.
+            mul = int(self.limits[product] // abs(self.regression[self.asset1][product]))
+            self.multiple = max(self.multiple, mul)
+        # Initialize current holdings for basket assets.
+        self.current_holdings = {}
+        self.max_position = 1000
+        self.base_spread = 1
+        self.skew_param = 0.2
+        self.base_size = 1
+
+        self.spread_window =225
+        self.entry_threshold = 0.5
+        self.exit_threshold = 0.1
+        self.position_size = 2
+        self.spread_buffer = 1.0  # Execution cost buffer
+        self.p_history: dict[deque] = {}
+        self.tick = 0
+        self.mid_price_history = deque(maxlen=200)
+
+
     def take_best_orders(
         self,
         product: str,
@@ -616,6 +607,8 @@ class Trader:
         elif order_depth.buy_orders:
             return max(order_depth.buy_orders.keys())
         return None
+
+
     def synthetic_real_arb(self, state: TradingState) -> List[Order]:
         orders: List[Order] = []
         arb_threshold = 50
@@ -677,76 +670,280 @@ class Trader:
             real_buy_price = min(pb2_depth.sell_orders.keys())
             orders.append(Order("PICNIC_BASKET2", real_buy_price, 1))
         return orders
+    def take_bids(self, best_bid, best_bid_amount, q, asset, liquidate=False):
+        orders = []
+        n = len(best_bid)
+        q0 = min(q, best_bid_amount[0])
+        q1, q2 = 0, 0
+        if q0 < q and n > 1:
+            q1 = min(q - q0, best_bid_amount[1])
+            if q0 + q1 < q and n > 2:
+                q2 = min(q - q0 - q1, best_bid_amount[2])
+        if liquidate or q0 + q1 + q2 == q:
+            orders.append(Order(asset, best_bid[0], -q0))
+            if q1:
+                orders.append(Order(asset, best_bid[1], -q1))
+            if q2:
+                orders.append(Order(asset, best_bid[2], -q2))
+        return orders
+
+    def take_asks(self, best_ask, best_ask_amount, q, asset, liquidate=False):
+        orders = []
+        n = len(best_ask)
+        q0 = max(-q, best_ask_amount[0])
+        q1, q2 = 0, 0
+        if q0 > -q and n > 1:
+            q1 = max(-q - q0, best_ask_amount[1])
+            if q0 + q1 > -q and n > 2:
+                q2 = max(-q - q0 - q1, best_ask_amount[2])
+        if liquidate or q0 + q1 + q2 == -q:
+            orders.append(Order(asset, best_ask[0], -q0))
+            if q1:
+                orders.append(Order(asset, best_ask[1], -q1))
+            if q2:
+                orders.append(Order(asset, best_ask[2], -q2))
+        return orders
+
+    def liquidate(self, best_bid, best_bid_amount, best_ask, best_ask_amount, asset):
+        q = self.current_holdings[asset]
+        if q < 0:
+            return self.take_asks(best_ask, best_ask_amount, abs(q), asset, liquidate=True)
+        elif q > 0:
+            return self.take_bids(best_bid, best_bid_amount, abs(q), asset, liquidate=True)
+        return []
+
+    def trader_max(self, state: TradingState) -> Dict[str, List[Order]]:
+        result = {}
+        # Initialize result containers for basket assets.
+        result[self.asset1] = []
+        for product in self.asset2:
+            result[product] = []
+        self.current_holdings[self.asset1] = state.position.get(self.asset1, 0)
+        for x in self.asset2:
+            self.current_holdings[x] = state.position.get(x, 0)
+        order_depth_1 = state.order_depths[self.asset1]
+        order_depth_2 = {x: state.order_depths[x] for x in self.asset2}
+
+        # Best bid/ask for asset1.
+        if order_depth_1.sell_orders:
+            best_ask1, best_ask_amount1 = zip(*list(order_depth_1.sell_orders.items()))
+            best_ask1, best_ask_amount1 = list(best_ask1), list(best_ask_amount1)
+        else:
+            best_ask1, best_ask_amount1 = [], []
+        if order_depth_1.buy_orders:
+            best_bid1, best_bid_amount1 = zip(*list(order_depth_1.buy_orders.items()))
+            best_bid1, best_bid_amount1 = list(best_bid1), list(best_bid_amount1)
+        else:
+            best_bid1, best_bid_amount1 = [], []
+        best_ask2, best_ask_amount2 = {}, {}
+        best_bid2, best_bid_amount2 = {}, {}
+        for x in self.asset2:
+            od = order_depth_2[x]
+            if od.sell_orders:
+                best_ask2[x], best_ask_amount2[x] = zip(*list(od.sell_orders.items()))
+            else:
+                best_ask2[x], best_ask_amount2[x] = [], []
+            if od.buy_orders:
+                best_bid2[x], best_bid_amount2[x] = zip(*list(od.buy_orders.items()))
+            else:
+                best_bid2[x], best_bid_amount2[x] = [], []
+            best_ask2[x], best_ask_amount2[x] = list(best_ask2[x]), list(best_ask_amount2[x])
+            best_bid2[x], best_bid_amount2[x] = list(best_bid2[x]), list(best_bid_amount2[x])
+        if not (list(best_ask_amount1) + list(best_bid_amount1)):
+            return {self.asset1: [], self.asset2[0]: []}
+        self.mid[self.asset1] = (best_bid1[0] + best_ask1[0]) / 2
+        for x in self.asset2:
+            self.mid[x] = (best_bid2[x][0] + best_ask2[x][0]) / 2
+        multiples = list(range(1, 1 + self.multiple))[::-1]
+        curr_long = self.current_holdings[self.asset1] > 0
+        curr_short = self.current_holdings[self.asset1] < 0
+        spread = self.mid[self.asset1] - self.regression[self.asset1]['Intercept']
+        for product in self.asset2:
+            spread -= self.regression[self.asset1][product] * self.mid[product]
+        spread /= self.regression[self.asset1]['std']
+        q = 0
+        neutral = False
+        if not (curr_short or curr_long):
+            self.to_liquidate[self.asset1] = False
+            for x in self.asset2:
+                self.to_liquidate[x] = False
+        if (curr_long and spread > self.threshold * self.prop) or \
+           (curr_short and spread < -self.threshold * self.prop) or \
+           self.to_liquidate[self.asset1] or any(self.to_liquidate[x] for x in self.asset2):
+            neutral = True
+        elif spread > self.threshold and not curr_short:
+            q = 1
+        elif spread < -self.threshold and not curr_long:
+            q = -1
+        if q > 0:
+            for mul in multiples:
+                bid = self.take_bids(best_bid1, best_bid_amount1, mul, self.asset1)
+                if not bid:
+                    continue
+                asks = {}
+                for product in self.asset2:
+                    desired_quant = round(self.regression[self.asset1][product] * mul)
+                    ask = self.take_asks(best_ask2[product], best_ask_amount2[product], desired_quant, product)
+                    if not (ask and desired_quant):
+                        asks = {}
+                        break
+                    asks[product] = ask
+                if not asks:
+                    continue
+                result[self.asset1] = bid
+                for product in self.asset2:
+                    result[product] = asks[product]
+                break
+        if q < 0:
+            for mul in multiples:
+                ask = self.take_asks(best_ask1, best_ask_amount1, mul, self.asset1)
+                if not ask:
+                    continue
+                bids = {}
+                for product in self.asset2:
+                    desired_quant = round(self.regression[self.asset1][product] * mul)
+                    bid = self.take_asks(best_bid2[product], best_bid_amount2[product], desired_quant, product)
+                    if not (bid and desired_quant):
+                        bids = {}
+                        break
+                    bids[product] = bid
+                if not bids:
+                    continue
+                result[self.asset1] = ask
+                for product in self.asset2:
+                    result[product] = bids[product]
+                break
+        if neutral:
+            self.to_liquidate[self.asset1] = True
+            for x in self.asset2:
+                self.to_liquidate[x] = True
+            result[self.asset1] = self.liquidate(best_bid1, best_bid_amount1, best_ask1, best_ask_amount1, self.asset1)
+            for product in self.asset2:
+                result[product] = self.liquidate(best_bid2[product], best_bid_amount2[product], best_ask2[product], best_ask_amount2[product], product)
+        return result
+    def options_trader(self, state: TradingState,p2,p1 ="VOLCANIC_ROCK_VOUCHER_10500" ) -> List[Order]:
+        self.tick += 1
+        result = {p1: [], p2: []}
+
+        if p1 not in state.order_depths or p2 not in state.order_depths:
+            return result, 0, ""
+
+        p1_depth = state.order_depths[p1]
+        p2_depth = state.order_depths[p2]
+
+        mid_p1= self.get_mid_price(p1_depth)
+        mid_p2= self.get_mid_price(p2_depth)
+
+        if mid_p1 is None or mid_p2 is None:
+            return result
+
+        self.p_history.setdefault(p1, deque(maxlen =self.spread_window))
+        self.p_history.setdefault(p2, deque(maxlen = self.spread_window))
+
+        # Append the current mid prices to their respective deques
+        self.p_history[p1].append(mid_p1)
+        self.p_history[p2].append(mid_p2)
+        spread = mid_p1 - mid_p2
+        mean = np.mean(np.array(self.p_history[p1]) - np.array(self.p_history[p2]))
+        std = np.std(np.array(self.p_history[p1]) - np.array(self.p_history[p2]))
+
+        p1_pos = state.position.get(p1, 0)
+        p2_pos = state.position.get(p2, 0)
+
+        size_factor = min(max(1, abs((spread - mean) / std)), 5) if std > 0 else 1
+        trade_size = int(self.base_size * size_factor)
+
+        if std > 0:
+            if spread > mean + self.entry_threshold * std + self.spread_buffer:
+                if p1_pos > -self.max_position and p2_pos < self.max_position:
+                    result[p1].append(Order(p1, int(round(mid_p1- 1)), -trade_size))
+                    result[p2].append(Order(p2, int(round(mid_p2+ 1)), trade_size))
+
+            elif spread < mean - self.entry_threshold * std - self.spread_buffer:
+                if p1_pos < self.max_position and p2_pos > -self.max_position:
+                    result[p1].append(Order(p1, int(round(mid_p1+ 1)), trade_size))
+                    result[p2].append(Order(p2, int(round(mid_p2- 1)), -trade_size))
+
+            elif abs(spread - mean) < self.exit_threshold * std:
+                if p1_pos > 0:
+                    result[p1].append(Order(p1, int(round(mid_p1- 1)), -p1_pos))
+                if p1_pos < 0:
+                    result[p1].append(Order(p1, int(round(mid_p1+ 1)), -p1_pos))
+                if p2_pos > 0:
+                    result[p2].append(Order(p2, int(round(mid_p2- 1)), -p2_pos))
+                if p2_pos < 0:
+                    result[p2].append(Order(p2, int(round(mid_p2+ 1)), -p2_pos))
+
+        inv_skew = self.skew_param * p1_pos
+        adjusted_mid = mid_p1- inv_skew
+        half_spread = self.base_spread / 2
+        bid_price = int(round(adjusted_mid - half_spread))
+        ask_price = int(round(adjusted_mid + half_spread))
+
+        buy_size = self.base_size if p1_pos < self.max_position else 1
+        sell_size = self.base_size if p1_pos > -self.max_position else 1
+
+        if bid_price > 0:
+            result[p1].append(Order(p1, bid_price, buy_size))
+        if ask_price > 0:
+            result[p1].append(Order(p1, ask_price, -sell_size))
+        result.pop(p1)
+        return result
+    def get_mid_price(self, order_depth: OrderDepth):
+        if order_depth.buy_orders and order_depth.sell_orders:
+            best_bid = max(order_depth.buy_orders.keys())
+            best_ask = min(order_depth.sell_orders.keys())
+            return (best_bid + best_ask) / 2
+        return None
+    def calculate_ema(self, values, span):
+        """Simple EMA calculation"""
+        if len(values) < 3:
+            return sum(values) / len(values) if values else None
+            
+        alpha = 2 / (span + 1)
+        # alpha =1
+        ema = values[0]
+        for price in values[1:]:
+            ema = (price * alpha) + (ema * (1 - alpha))
+
+        return ema
+    def marketMakeMacarons(self,state:TradingState):
+        observations = state.observations.conversionObservations[Product.MACARON]
+        order_depths = state.order_depths
+        if observations.sunlightIndex <60 or Product.MACARON not in order_depths.keys():
+            #If less than 50 we cant market make or macaron not being traded
+            return{}
+        #else:
+        bids = order_depths[Product.MACARON].buy_orders
+        asks = order_depths[Product.MACARON].sell_orders
+        best_bid= min(bids.keys())
+        best_ask = max(asks.keys())
+        mid = (best_bid+best_ask)/2
+        spread = 4
+        skew = 0
+        buyPrice = int(mid-spread+skew)
+        sellPrice = int(mid+spread-2)
+        position = state.position.get(Product.MACARON,0)
+        available_to_buy = self.LIMIT[Product.MACARON]-position
+        available_to_sell = self.LIMIT[Product.MACARON]+position
+        #Limit of buy or sell to 10 or min available to manage position:
+        max_size = 50
+        buyQty = min(max_size,available_to_buy)
+        sellQty = min(max_size,available_to_sell)
+        buyTrade = Order(Product.MACARON,buyPrice,buyQty)
+        sellTrade = Order(Product.MACARON,sellPrice,-sellQty)
+        result ={Product.MACARON:[buyTrade,sellTrade]}
+        return result   
 
     
-    def tradevs(self,state:TradingState,name,productsToTrade:List):
-        marketTrades = state.market_trades
-        result = {}
-        for product in productsToTrade:
-            try:
-                position = state.position.get(product,0)
-                availableBuy = self.LIMIT[product] - position
-                availableSell = self.LIMIT[product] + position
-                trades = marketTrades[product]
-                productTrades= []
-                for trade in trades:
-                    if trade.buyer == name:
-                        sellQty = trade.quantity
-                        sellPrice= trade.price
-                        sellQty = min(sellQty,availableSell)
-                        sellQty = availableSell
-                        sellTrade= Order(product,int(sellPrice),int(-sellQty))
-                        productTrades.append(sellTrade)
-                    if trade.seller ==name:
-                        buyQty= trade.quantity
-                        buyPrice= trade.price
-                        buyQty = min(buyQty,availableBuy)
-                        buyQty = availableBuy
-                        buyTrade= Order(product,int(buyPrice),int(buyQty))
-                        productTrades.append(buyTrade)
-                result[product] = productTrades
-            except:
-                # print("Can't Trade this product")
-                continue
-        return result
-    def tradeas(self,state:TradingState,name,productsToTrade:List):
-        marketTrades = state.market_trades
-        result = {}
-        for product in productsToTrade:
-            try:
-                position = state.position.get(product,0)
-                availableBuy = self.LIMIT[product] - position
-                availableSell = self.LIMIT[product] + position
-                trades = marketTrades[product]
-                productTrades= []
-                for trade in trades:
-                    if trade.buyer == name:
-                        sellQty = trade.quantity
-                        sellPrice= trade.price
-                        sellQty = min(sellQty,availableSell)
-                        sellTrade= Order(product,int(sellPrice),int(sellQty))
-                        productTrades.append(sellTrade)
-                    if trade.seller ==name:
-                        buyQty= trade.quantity
-                        buyPrice= trade.price
-                        buyQty = min(buyQty,availableBuy)
-                        buyTrade= Order(product,int(buyPrice),int(-buyQty))
-                        productTrades.append(buyTrade)
-                result[product] = productTrades
-            except:
-                # print("Can't Trade this product")
-                continue
-        return result
-    def run(self,state:TradingState):
+   
+    def run(self, state: TradingState):
         traderObject = {}
         if state.traderData != None and state.traderData != "":
             traderObject = jsonpickle.decode(state.traderData)
-        productsToTrade = [Product.DJEMBES,Product.VOLCANIC_ROCK_VOUCHER_10000,
-                           Product.VOLCANIC_ROCK_VOUCHER_10250,Product.VOLCANIC_ROCK_VOUCHER_9500,Product.VOLCANIC_ROCK_VOUCHER_9750]
-        allProducts = state.listings.keys()
-        # productsToTrade = ["SQUID_INK"]
-        result = self.tradevs(state,"Penelope",productsToTrade)
-        # result ={}
+
+        result = {}
+
         if Product.RAINFOREST_RESIN in self.params and Product.RAINFOREST_RESIN in state.order_depths:
             rainforest_position = (
                 state.position[Product.RAINFOREST_RESIN]
@@ -872,15 +1069,30 @@ class Trader:
                 )
 
                 result[Product.SQUID_INK] = take_orders +clear_orders + make_orders
-            arb_orders = self.synthetic_real_arb(state)
-            for order in arb_orders:
-                if order.symbol in result:
-                    result[order.symbol].append(order)
-                else:
-                    result[order.symbol] = [order]
 
+        arb_orders = self.synthetic_real_arb(state)
+        for order in arb_orders:
+            if order.symbol in result:
+                result[order.symbol].append(order)
+            else:
+                result[order.symbol] = [order]
+        basket_orders = self.trader_max(state)
+        for asset, orders_list in basket_orders.items():
+            if asset in result:
+                result[asset].extend(orders_list)
+            else:
+                result[asset] = orders_list
+        for p2 in ["VOLCANIC_ROCK_VOUCHER_9500","VOLCANIC_ROCK_VOUCHER_9750",
+                   "VOLCANIC_ROCK_VOUCHER_10000","VOLCANIC_ROCK_VOUCHER_10250","VOLCANIC_ROCK"]:
+            temp_result = self.options_trader(state,p2)
+            self.p_history.pop("VOLCANIC_ROCK_VOUCHER_10500",None)
+            result[p2] = temp_result[p2]
+        # result.pop("CROISSANTS")
+        conversions = 1
+        result_macarons = self.marketMakeMacarons(state)
+        result.update(result_macarons)
+        # logger.flush(state,result,conversions,traderData)
         traderData = jsonpickle.encode(traderObject)
-        # logger.flush(state,result,1,traderData)
-        return result,1,traderData
 
+        return result, conversions, traderData
 

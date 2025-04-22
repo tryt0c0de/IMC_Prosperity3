@@ -94,7 +94,7 @@ class Trader:
         self.skew_param = 0.2
         self.base_size = 1
 
-        self.spread_window = 500
+        self.spread_window = 250
         self.entry_threshold = 0.5
         self.exit_threshold = 0.1
         self.position_size = 2

@@ -388,12 +388,6 @@ class Trader:
         default_edge: float,
         adverse_volume: int = 25,
     ):
-        """
-        Specialized market making function for KELP that considers:
-        1. The trending nature of the product
-        2. Presence of informed market makers (identified by order volume)
-        3. Multiple price levels to determine optimal order placement
-        """
         orders: List[Order] = []
         position_limit = self.LIMIT[Product.KELP]
         

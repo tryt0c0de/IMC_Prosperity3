@@ -616,6 +616,7 @@ class Trader:
         elif order_depth.buy_orders:
             return max(order_depth.buy_orders.keys())
         return None
+        
     def synthetic_real_arb(self, state: TradingState) -> List[Order]:
         orders: List[Order] = []
         arb_threshold = 50

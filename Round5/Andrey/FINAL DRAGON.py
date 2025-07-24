@@ -5,9 +5,9 @@ import jsonpickle
 import numpy as np
 import math
 from typing import Dict 
-#from Logger import Logger
+from Logger import Logger
 from collections import deque
-#logger = Logger()
+logger = Logger()
 
 class Product:
     RAINFOREST_RESIN = "RAINFOREST_RESIN"
@@ -1228,5 +1228,5 @@ class Trader:
         result_macarons = self.marketMakeMacarons(state)
         result.update(result_macarons)
         traderData = jsonpickle.encode(traderObject)
-        #logger.flush(state,result,conversions,traderData)       
+        logger.flush(state,result,conversions,traderData)       
         return result, conversions, traderData

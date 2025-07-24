@@ -103,6 +103,13 @@ class Trader:
         self.tick = 0
         self.mid_price_history = deque(maxlen=200)
 
+        self.start = 4_000_000
+        self.tick_andrey = 4_000_000
+        self.log_returns = []
+        self.prev_price = None
+        self.tick_vol = {'VOLCANIC_ROCK':0, 'VOLCANIC_ROCK_VOUCHER_9500':0, 'VOLCANIC_ROCK_VOUCHER_9750':0, 'VOLCANIC_ROCK_VOUCHER_10000':0}
+        self.limits_volc = {'VOLCANIC_ROCK':400, 'VOLCANIC_ROCK_VOUCHER_9500':200, 'VOLCANIC_ROCK_VOUCHER_9750':200, 'VOLCANIC_ROCK_VOUCHER_10000':200, 'VOLCANIC_ROCK_VOUCHER_10250':200, 'VOLCANIC_ROCK_VOUCHER_10500':200}
+
 
     def take_best_orders(
         self,
@@ -607,6 +614,8 @@ class Trader:
         elif order_depth.buy_orders:
             return max(order_depth.buy_orders.keys())
         return None
+
+
     def synthetic_real_arb(self, state: TradingState) -> List[Order]:
         orders: List[Order] = []
         arb_threshold = 50
@@ -819,74 +828,7 @@ class Trader:
             for product in self.asset2:
                 result[product] = self.liquidate(best_bid2[product], best_bid_amount2[product], best_ask2[product], best_ask_amount2[product], product)
         return result
-    def options_trader(self, state: TradingState,p2,p1 ="VOLCANIC_ROCK_VOUCHER_10500" ) -> List[Order]:
-        self.tick += 1
-        result = {p1: [], p2: []}
 
-        if p1 not in state.order_depths or p2 not in state.order_depths:
-            return result, 0, ""
-
-        p1_depth = state.order_depths[p1]
-        p2_depth = state.order_depths[p2]
-
-        mid_p1= self.get_mid_price(p1_depth)
-        mid_p2= self.get_mid_price(p2_depth)
-
-        if mid_p1 is None or mid_p2 is None:
-            return result
-
-        self.p_history.setdefault(p1, deque(maxlen =self.spread_window))
-        self.p_history.setdefault(p2, deque(maxlen = self.spread_window))
-
-        # Append the current mid prices to their respective deques
-        self.p_history[p1].append(mid_p1)
-        self.p_history[p2].append(mid_p2)
-        spread = mid_p1 - mid_p2
-        mean = np.mean(np.array(self.p_history[p1]) - np.array(self.p_history[p2]))
-        std = np.std(np.array(self.p_history[p1]) - np.array(self.p_history[p2]))
-
-        p1_pos = state.position.get(p1, 0)
-        p2_pos = state.position.get(p2, 0)
-
-        size_factor = min(max(1, abs((spread - mean) / std)), 5) if std > 0 else 1
-        trade_size = int(self.base_size * size_factor)
-
-        if std > 0:
-            if spread > mean + self.entry_threshold * std + self.spread_buffer:
-                if p1_pos > -self.max_position and p2_pos < self.max_position:
-                    result[p1].append(Order(p1, int(round(mid_p1- 1)), -trade_size))
-                    result[p2].append(Order(p2, int(round(mid_p2+ 1)), trade_size))
-
-            elif spread < mean - self.entry_threshold * std - self.spread_buffer:
-                if p1_pos < self.max_position and p2_pos > -self.max_position:
-                    result[p1].append(Order(p1, int(round(mid_p1+ 1)), trade_size))
-                    result[p2].append(Order(p2, int(round(mid_p2- 1)), -trade_size))
-
-            elif abs(spread - mean) < self.exit_threshold * std:
-                if p1_pos > 0:
-                    result[p1].append(Order(p1, int(round(mid_p1- 1)), -p1_pos))
-                if p1_pos < 0:
-                    result[p1].append(Order(p1, int(round(mid_p1+ 1)), -p1_pos))
-                if p2_pos > 0:
-                    result[p2].append(Order(p2, int(round(mid_p2- 1)), -p2_pos))
-                if p2_pos < 0:
-                    result[p2].append(Order(p2, int(round(mid_p2+ 1)), -p2_pos))
-
-        inv_skew = self.skew_param * p1_pos
-        adjusted_mid = mid_p1- inv_skew
-        half_spread = self.base_spread / 2
-        bid_price = int(round(adjusted_mid - half_spread))
-        ask_price = int(round(adjusted_mid + half_spread))
-
-        buy_size = self.base_size if p1_pos < self.max_position else 1
-        sell_size = self.base_size if p1_pos > -self.max_position else 1
-
-        if bid_price > 0:
-            result[p1].append(Order(p1, bid_price, buy_size))
-        if ask_price > 0:
-            result[p1].append(Order(p1, ask_price, -sell_size))
-        result.pop(p1)
-        return result
     def get_mid_price(self, order_depth: OrderDepth):
         if order_depth.buy_orders and order_depth.sell_orders:
             best_bid = max(order_depth.buy_orders.keys())
@@ -933,7 +875,190 @@ class Trader:
         result ={Product.MACARON:[buyTrade,sellTrade]}
         return result   
 
-    
+    def norm_cdf(self, x, mu=0, sigma=1):
+        """Cumulative distribution function for a normal distribution."""
+        z = (x - mu) / (sigma * math.sqrt(2))
+        return 0.5 * (1 + math.erf(z))
+    def norm_pdf(self, x, mu=0, sigma=1):
+        """Probability density function of a normal distribution."""
+        coef = 1 / (sigma * math.sqrt(2 * math.pi))
+        exponent = -((x - mu) ** 2) / (2 * sigma ** 2)
+        return coef * math.exp(exponent)
+
+    def black_scholes_call(self, S, K, T, r, sigma):
+        #Calculate the price of a European call option using Black-Scholes formula.
+        if sigma <= 0:
+            # Handle invalid volatility
+            return max(0, S-K * np.exp(-r*T))
+        
+        d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * 
+              T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        price = S * self.norm_cdf(d1) - K * np.exp(-r * T) * self.norm_cdf(d2)
+        delta = self.norm_cdf(d1)
+        return price, delta
+
+    def vol_trade(self, state: TradingState, p, t, under = "VOLCANIC_ROCK") -> List[Order]:
+        result = {p: [], under: []}
+        if p not in state.order_depths or under not in state.order_depths:
+            return result, 0, ""
+        
+        def implied_volatility_newton(S, V, K, T, r=0.0, initial_guess=0.3, 
+                             precision=1e-8, max_iterations=100):
+            
+            intrinsic = max(0, S - K * np.exp(-r * T))
+            if V < intrinsic:
+                return 0, 1  # Option price below intrinsic value
+            
+            # if T <= 0:
+            #     return float('nan'), float('nan')  # Expired option
+            
+            # Initial guess
+            sigma = initial_guess
+            
+            # Calculate vega (derivative of price with respect to volatility)
+            def vega(sigma):
+                d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                return S * np.sqrt(T) * self.norm_pdf(d1)
+            
+            for i in range(max_iterations):
+                price, delta = self.black_scholes_call(S, K, T, r, sigma)
+                price_diff = price - V
+                
+                if abs(price_diff) < precision:
+                    return sigma, delta
+                
+                v = vega(sigma)
+                if abs(v) < 1e-10:
+                    # Avoid division by zero
+                    return float('nan')
+                
+                # Newton-Raphson update
+                sigma = sigma - price_diff / v
+                
+                # Handle sigma going negative or too high
+                if sigma <= 0:
+                    sigma = 0.001
+                elif sigma > 50:
+                    return float('nan')
+            
+            # If didn't converge within max iterations
+            return float('nan')
+        K = int(p.split("_")[-1])
+        p_depth = state.order_depths[p]
+        s_depth = state.order_depths[under]
+        time_converted = int(t)
+        T_together = 6_000_000
+        T = (T_together - time_converted) / T_together
+        S = self.get_mid_price(s_depth)
+        K = int(p.split("_")[-1])
+        if abs(K - S) >= 450:
+            a = 0.09
+            b = 0.02
+        elif abs(K - S) >= 250:
+            a = 0.015
+            b = 0.007
+        elif abs(K - S) >= 0:
+            a = 0.02
+            b = 0.02
+        if self.prev_price is not None:
+            self.log_returns.append(np.log(S) - np.log(self.prev_price))
+            annualized_spent = 100 / T_together
+            realised_vol = np.std(self.log_returns[-100:]) / np.sqrt(annualized_spent)
+            #logger.print('RV', realised_vol)
+        else:
+            realised_vol = 0.03
+        self.prev_price = S
+        V = self.get_mid_price(p_depth)
+        if V is None:
+            return result
+        if S is None:
+            return result
+        iv, delta = implied_volatility_newton(S=S, V=V, K=K, T=T)
+        added = 0
+        #logger.print("IVIVIV", iv)
+        if iv <= realised_vol - a:  
+            for price in state.order_depths[p].sell_orders:
+                if K is None or S is None or T is None:
+                    return result
+                if price is None or price == 0:
+                    return result
+                iv_c, delta = implied_volatility_newton(S=S, V=price, K=K, T=T)
+                if iv_c is None:
+                    return result
+                m_t = np.log(K / price) / np.sqrt(T)
+                if iv_c <= realised_vol - a:  
+                    #best_ask = min(p_depth.sell_orders.keys())
+                    best_ask = price
+                    best_ask_size = state.order_depths[p].sell_orders[price]
+                    # SIGNAL
+                    #logger.print("hola",self.tick,result, iv, iv_c, delta)
+                    if state.position.get(p, 0) + added < self.limits_volc[p]:
+                        max_p_buy = self.limits_volc[p] - (state.position.get(p, 0) + added)  # how much we can buy before hitting limit
+                        buy_size = min(abs(best_ask_size), max_p_buy)
+                        added += buy_size
+                        result[p].append(Order(p, best_ask, buy_size))
+
+        #self.tick_vol[p] += 1
+        added = 0
+        #added_under = 0
+        #m_t = np.log(K / S) / np.sqrt(T)
+        if iv >= realised_vol + b:  # ono syda ne zahodit ?
+            #logger.print("HUI", iv)
+            for price in state.order_depths[p].buy_orders:
+                if K is None or S is None or T is None:
+                    return result
+                if price is None or price == 0:
+                    return result
+                iv_c, delta = implied_volatility_newton(S=S, V=price, K=K, T=T)
+                if iv_c is None:
+                    return result
+                m_t = np.log(K / price) / np.sqrt(T)
+                if iv_c >= realised_vol + b: 
+                    best_bid = price
+                    best_bid_size = state.order_depths[p].buy_orders[price]
+                    # SIGNAL
+                    if (state.position.get(p, 0) + added) > -self.limits_volc[p]:
+                        max_p_sell = (state.position.get(p, 0) + added) + self.limits_volc[p]  # how much we can sell before hitting -limit
+                        sell_size = min(best_bid_size, max_p_sell)
+                        added -= sell_size
+                        result[p].append(Order(p, best_bid, int(-sell_size)))
+
+        # === Continuous Delta Hedging ===
+        # Estimate net delta of options position
+        if state.timestamp % 50000 == 0:
+            opt_pos = state.position.get(p, 0)
+            opt_price = self.get_mid_price(p_depth)
+
+            if (realised_vol * np.sqrt(T)) != 0:
+                d1 = (np.log(S/K) + (0.5 * realised_vol**2) * 
+                T) / (realised_vol * np.sqrt(T))
+                total_delta = self.norm_cdf(d1)
+                #_, total_delta = implied_volatility_newton(S=S, V=opt_price, K=K, T=T)
+
+                net_opt_delta = opt_pos * total_delta
+                underlying_pos = state.position.get(under, 0)
+                desired_underlying_pos = -int(round(net_opt_delta))
+
+                hedge_diff = desired_underlying_pos - underlying_pos
+
+                if hedge_diff != 0:
+                    if hedge_diff > 0:
+                        # Buy underlying
+                        best_ask = min(s_depth.sell_orders.keys())
+                        max_buy = self.limits_volc[under] - underlying_pos
+                        hedge_size = min(hedge_diff, max_buy)
+                        if hedge_size > 0:
+                            result[under].append(Order(under, best_ask, hedge_size))
+                    else:
+                        # Sell underlying
+                        best_bid = max(s_depth.buy_orders.keys())
+                        max_sell = self.limits_volc[under] + underlying_pos
+                        hedge_size = min(-hedge_diff, max_sell)
+                        if hedge_size > 0:
+                            result[under].append(Order(under, best_bid, -hedge_size))
+
+        return result
    
     def run(self, state: TradingState):
         traderObject = {}
@@ -1080,17 +1205,28 @@ class Trader:
                 result[asset].extend(orders_list)
             else:
                 result[asset] = orders_list
-        for p2 in ["VOLCANIC_ROCK_VOUCHER_9500","VOLCANIC_ROCK_VOUCHER_9750",
-                   "VOLCANIC_ROCK_VOUCHER_10000","VOLCANIC_ROCK_VOUCHER_10250","VOLCANIC_ROCK"]:
-            temp_result = self.options_trader(state,p2)
-            self.p_history.pop("VOLCANIC_ROCK_VOUCHER_10500",None)
-            result[p2] = temp_result[p2]
+        # for p2 in ["VOLCANIC_ROCK_VOUCHER_9500","VOLCANIC_ROCK_VOUCHER_9750",
+        #            "VOLCANIC_ROCK_VOUCHER_10000","VOLCANIC_ROCK_VOUCHER_10250","VOLCANIC_ROCK"]:
+        #     temp_result = self.options_trader(state,p2)
+        #     self.p_history.pop("VOLCANIC_ROCK_VOUCHER_10500",None)
+        #     result[p2] = temp_result[p2]
+
+        for p in ["VOLCANIC_ROCK_VOUCHER_9500", "VOLCANIC_ROCK_VOUCHER_9750", "VOLCANIC_ROCK_VOUCHER_10000", "VOLCANIC_ROCK_VOUCHER_10250"]:
+            vol_trade_result = self.vol_trade(state, p = p, t = self.tick_andrey)
+            if p in result:
+                result[p].extend(vol_trade_result[p])
+            else:
+                result[p] = vol_trade_result[p]
+            if 'VOLCANIC_ROCK' in result:
+                result['VOLCANIC_ROCK'].extend(vol_trade_result['VOLCANIC_ROCK'])
+            else:
+                result['VOLCANIC_ROCK'] = vol_trade_result['VOLCANIC_ROCK']
+        self.tick += 100
+
         # result.pop("CROISSANTS")
         conversions = 1
         result_macarons = self.marketMakeMacarons(state)
         result.update(result_macarons)
-        # logger.flush(state,result,conversions,traderData)
         traderData = jsonpickle.encode(traderObject)
-
+        # logger.flush(state,result,conversions,traderData)       
         return result, conversions, traderData
-

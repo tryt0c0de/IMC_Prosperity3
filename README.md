@@ -31,12 +31,11 @@
 - Manual Trade Analysis
 
 ## Repository Structure
-├── ToolsIMC/ # Backtesting & data‑loading utilities
-├── Tutorial/ # Official IMC tutorial & starter notebooks
-├── Round1/ … Round5/ # Algorithmic challenge code & notebooks
-├── Pippo/ # Experimental scripts & playground
-├── Trash/ # Deprecated experiments
-├── .gitignore
-├── README.md # ← you are here
+├── ToolsIMC/ # Backtesting & data‑loading utilities \\
+├── Tutorial/ # Official IMC tutorial & starter notebooks \\
+├── Round1/ … Round5/ # Algorithmic challenge code & notebooks \\
+├── Pippo/ # Experimental scripts & playground \\
+├── Trash/ # Deprecated experiments \\
+├── .gitignore \\
+├── README.md \\
 └── output.png # Final PnL Structure for each product
-::contentReference[oaicite:0]{index=0}

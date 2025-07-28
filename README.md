@@ -39,3 +39,4 @@
 ├── .gitignore
 ├── README.md # ← you are here
 └── output.png # Final PnL Structure for each product
+::contentReference[oaicite:0]{index=0}
